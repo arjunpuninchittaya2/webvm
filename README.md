@@ -238,6 +238,11 @@ WebVM configures the following CheerpX Linux mount points (`src/lib/vm/vmManager
 - **Notifications & WebAudio Bell (`#33`)**: Settings → *Audio terminal bell* plays a short WebAudio beep for BEL (`\a`), with a **Test bell** button; a blocked/unsupported `AudioContext` degrades to a visual toast instead of throwing. Service lifecycle events raise toasts and, if permission was already granted, desktop `Notification`s while the tab is hidden.
 - **Dockerfile docs**: `dockerfiles/debian_large` now also installs `npm` and `sudo` (passwordless for `user`); `procps` (`pgrep`/`pkill`), `cron`, `git`, `curl` and `pip` were already present.
 
+#### Testing (M5/M6)
+
+- Unit: `npm test` (Vitest; includes `tests/unit/tier5Adversarial.test.js` hostile-input suite covering cron/profile/env/URL validation, shell-injection hardening of service ids, corrupted storage and prototype-pollution attempts).
+- E2E (opaque-box, against the static build): `npm run build && for t in 1 2 3 4; do node tests/e2e/run-tiers.mjs --static-dir ./build --tier $t --action-timeout 6000; done`.
+
 For the full Alpine desktop environment, see [leaningtech/alpine-image](https://github.com/leaningtech/alpine-image).
 
 For more details, see [CheerpX Custom Images documentation](https://cheerpx.io/docs/guides/custom-images).

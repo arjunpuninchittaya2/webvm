@@ -75,6 +75,17 @@ describe('resolveBootConfig', () => {
 		expect(r.cacheId).toBe('blocks_terminal');
 		expect(r.config.opts.uid).toBe(1000);
 	});
+	it('default profile keeps the alpine route on alpine (regression: must not fall back to debian)', () => {
+		const r = resolveBootConfig(alpineCfg, DEFAULT_PROFILE, 'blocks_alpine');
+		expect(r.config.cmd).toBe('/sbin/init');
+		expect(r.config.needsDisplay).toBe(true);
+		expect(r.cacheId).toBe('blocks_alpine');
+	});
+	it('explicit debian profile on the alpine route switches to debian', () => {
+		const r = resolveBootConfig(alpineCfg, { ...DEFAULT_PROFILE, distro: 'debian' }, 'blocks_alpine');
+		expect(r.config.cmd).toBe('/bin/bash');
+		expect(r.cacheId).toBe('blocks_terminal');
+	});
 	it('switches to the alpine preset with its own cache on the debian route', () => {
 		const r = resolveBootConfig(debianCfg, { ...DEFAULT_PROFILE, distro: 'alpine' }, 'blocks_terminal');
 		expect(r.config.cmd).toBe('/sbin/init');

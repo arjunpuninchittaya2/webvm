@@ -365,7 +365,7 @@
 			</label>
 
 			<label class="flex flex-col gap-1">
-				<span class="text-gray-300">Workspace Target Path (optional)</span>
+				<span class="text-gray-300">Save location in workspace (optional)</span>
 				<input
 					type="text"
 					data-testid="download-target-input"

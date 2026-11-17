@@ -94,7 +94,9 @@ export function readMemoryStats(perf = typeof performance !== 'undefined' ? perf
 /** Builds an SVG polyline `points` string for a sparkline in a width x height box. */
 export function sparklinePoints(values, width, height, maxHint = 0) {
 	if (!Array.isArray(values) || values.length === 0) return '';
-	const max = Math.max(maxHint, ...values, 1);
+	const clean = values.map((v) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : 0));
+	values = clean;
+	const max = Math.max(maxHint, ...clean, 1);
 	const step = values.length > 1 ? width / (values.length - 1) : 0;
 	return values
 		.map((v, i) => {

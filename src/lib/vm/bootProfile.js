@@ -34,13 +34,14 @@ export const DISTRO_PRESETS = Object.freeze({
 });
 
 export const PROFILE_OPTIONS = Object.freeze([
+	{ value: 'default', label: 'Page default' },
 	{ value: 'debian', label: 'Debian (terminal)' },
 	{ value: 'alpine', label: 'Alpine (graphical)' },
 	{ value: 'custom', label: 'Custom .ext2 image' }
 ]);
 
 export const DEFAULT_PROFILE = Object.freeze({
-	distro: 'debian',
+	distro: 'default',
 	customUrl: '',
 	uid: '',
 	gid: '',
@@ -81,7 +82,7 @@ export function parseEnvText(text) {
 export function validateProfile(raw) {
 	const src = raw && typeof raw === 'object' ? raw : {};
 	const errors = [];
-	const distro = PROFILE_OPTIONS.some((o) => o.value === src.distro) ? src.distro : 'debian';
+	const distro = PROFILE_OPTIONS.some((o) => o.value === src.distro) ? src.distro : 'default';
 	if (src.distro && distro !== src.distro) errors.push(`Invalid profile "${String(src.distro).slice(0, 20)}"`);
 
 	const customUrl = String(src.customUrl ?? '').trim();
@@ -180,7 +181,7 @@ export function resolveBootConfig(base, profile, routeCacheId) {
 			opts: { ...DISTRO_PRESETS.debian.opts, env: [...DISTRO_PRESETS.debian.opts.env] }
 		};
 		cacheId = `blocks_custom_${hashString(p.customUrl)}`;
-	} else if (p.distro !== native && DISTRO_PRESETS[p.distro]) {
+	} else if (p.distro !== 'default' && p.distro !== native && DISTRO_PRESETS[p.distro]) {
 		const preset = DISTRO_PRESETS[p.distro];
 		out = {
 			diskImageUrl: preset.diskImageUrl,

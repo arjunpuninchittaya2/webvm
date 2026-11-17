@@ -28,7 +28,7 @@
 		{ icon: 'fas fa-store', info: 'Apps', activity: null },
 		{ icon: 'fas fa-globe', info: 'Web Preview', activity: null },
 		{ icon: 'fas fa-chart-line', info: 'System Monitor', activity: null },
-		{ icon: 'fas fa-sliders', info: 'Boot Profiles', activity: null },
+		{ icon: 'fas fa-sliders', info: 'Boot Config', activity: null },
 		{ icon: 'fas fa-gears', info: 'Services & Cron', activity: null },
 		{ icon: 'fas fa-robot', info: 'ClaudeAI', activity: aiActivity },
 		null,
@@ -236,7 +236,7 @@
 			/>
 		{:else if activeInfo === 'System Monitor'}
 			<SystemMonitorTab {vmManager} />
-		{:else if activeInfo === 'Boot Profiles'}
+		{:else if activeInfo === 'Boot Config'}
 			<BootProfileTab />
 		{:else if activeInfo === 'Services & Cron'}
 			<ServicesTab {supervisor} />

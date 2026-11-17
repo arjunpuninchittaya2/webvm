@@ -121,7 +121,7 @@ describe('BootProfileTab', () => {
 		btn('Save profile').click();
 		await tick();
 		const saved = JSON.parse(localStorage.getItem('webvm.bootprofile.v1'));
-		expect(saved).toMatchObject({ customUrl: 'https://disks.example.test/custom.ext2', uid: '1000', distro: 'debian' });
+		expect(saved).toMatchObject({ customUrl: 'https://disks.example.test/custom.ext2', uid: '1000', distro: 'default' });
 		expect(get(toasts).some((t) => /saved/i.test(t.message))).toBe(true);
 	});
 	it('rejects an ftp:// custom url and Reset form recovers to debian', async () => {
@@ -136,7 +136,7 @@ describe('BootProfileTab', () => {
 		expect(container.textContent).toMatch(/Invalid URL/);
 		btn('Reset form').click();
 		await tick();
-		expect(container.querySelector('select').value).toBe('debian');
+		expect(container.querySelector('select').value).toBe('default');
 		expect(container.querySelector('input[type="text"]').value).toBe('');
 	});
 });

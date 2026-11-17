@@ -22,7 +22,7 @@
 	}
 
 	function recoverDefaults() {
-		distro = 'debian';
+		distro = 'default';
 		customUrl = '';
 		uid = '';
 		gid = '';
@@ -40,40 +40,40 @@
 </p>
 
 <form class="flex flex-col gap-2 text-sm" on:submit|preventDefault={save}>
-	<label class="flex flex-col gap-0.5">
-		<span>Profile / distro</span>
-		<select class="bg-neutral-800 rounded p-1" bind:value={distro}>
+	<div class="flex flex-col gap-0.5">
+		<label for="bp-distro">Profile / distro</label>
+		<select id="bp-distro" class="bg-neutral-800 rounded p-1" bind:value={distro}>
 			{#each PROFILE_OPTIONS as opt}
 				<option value={opt.value}>{opt.label}</option>
 			{/each}
 		</select>
-	</label>
-	<label class="flex flex-col gap-0.5">
-		<span>Custom .ext2 disk image URL</span>
-		<input class="bg-neutral-800 rounded p-1" type="text" placeholder="https://example.com/disk.ext2" bind:value={customUrl} />
-	</label>
+	</div>
+	<div class="flex flex-col gap-0.5">
+		<label for="bp-url">Custom .ext2 disk image URL</label>
+		<input id="bp-url" class="bg-neutral-800 rounded p-1" type="text" placeholder="https://example.com/disk.ext2" bind:value={customUrl} />
+	</div>
 	<p class="text-xs text-gray-300">
 		Local .ext2 files are not supported: CheerpX 1.4.0 does not export FileDevice. Host the image over HTTP(S) with
 		byte-range support (used via HttpBytesDevice) and enter its URL here, then pick the Custom profile.
 	</p>
 	<div class="flex gap-2">
-		<label class="flex flex-col gap-0.5 w-1/2">
-			<span>UID</span>
-			<input class="bg-neutral-800 rounded p-1" type="text" inputmode="numeric" placeholder="default" bind:value={uid} />
-		</label>
-		<label class="flex flex-col gap-0.5 w-1/2">
-			<span>GID</span>
-			<input class="bg-neutral-800 rounded p-1" type="text" inputmode="numeric" placeholder="default" bind:value={gid} />
-		</label>
+		<div class="flex flex-col gap-0.5 w-1/2">
+			<label for="bp-uid">UID</label>
+			<input id="bp-uid" class="bg-neutral-800 rounded p-1" type="text" inputmode="numeric" placeholder="default" bind:value={uid} />
+		</div>
+		<div class="flex flex-col gap-0.5 w-1/2">
+			<label for="bp-gid">GID</label>
+			<input id="bp-gid" class="bg-neutral-800 rounded p-1" type="text" inputmode="numeric" placeholder="default" bind:value={gid} />
+		</div>
 	</div>
-	<label class="flex flex-col gap-0.5">
-		<span>Environment variables (one KEY=VALUE per line)</span>
-		<textarea class="bg-neutral-800 rounded p-1 font-mono text-xs" rows="3" placeholder="LC_ALL=C" bind:value={env}></textarea>
-	</label>
-	<label class="flex flex-col gap-0.5">
-		<span>Command (path and args)</span>
-		<input class="bg-neutral-800 rounded p-1 font-mono text-xs" type="text" placeholder="/bin/bash --login" bind:value={cmd} />
-	</label>
+	<div class="flex flex-col gap-0.5">
+		<label for="bp-env">Environment variables (one KEY=VALUE per line)</label>
+		<textarea id="bp-env" class="bg-neutral-800 rounded p-1 font-mono text-xs" rows="3" placeholder="LC_ALL=C" bind:value={env}></textarea>
+	</div>
+	<div class="flex flex-col gap-0.5">
+		<label for="bp-cmd">Command (path and args)</label>
+		<input id="bp-cmd" class="bg-neutral-800 rounded p-1 font-mono text-xs" type="text" placeholder="/bin/bash --login" bind:value={cmd} />
+	</div>
 
 	{#if errors.length}
 		<ul class="text-xs text-red-300 list-disc pl-4" role="alert">
