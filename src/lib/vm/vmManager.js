@@ -109,6 +109,7 @@ export async function sendTextToKms(text) {
 
 export function createVmManager(configObj, options = {}) {
 	const cacheId = options.cacheId || 'blocks_terminal';
+	const workspaceCacheId = options.workspaceCacheId || 'workspace';
 	const networkInterface = options.networkInterface || undefined;
 	const processCallback = options.processCallback || null;
 	const telemetry = options.telemetry || createTelemetryTracker();
@@ -124,6 +125,8 @@ export function createVmManager(configObj, options = {}) {
 	let displayEl = null;
 	let cx = null;
 	let blockCache = null;
+	let workspaceDevice = null;
+	let dataDevice = null;
 	let cxReadFunc = null;
 	let processCount = 0;
 	let disposed = false;
@@ -1396,9 +1399,10 @@ export function createVmManager(configObj, options = {}) {
 				error: null
 			});
 
-			const [blockDevice, createdCache, webDevice, documentsDevice, dataDevice] = await Promise.all([
+			const [blockDevice, createdCache, createdWorkspace, webDevice, documentsDevice, createdDataDevice] = await Promise.all([
 				createBlockDevice(CheerpX),
 				CheerpX.IDBDevice.create(cacheId),
+				CheerpX.IDBDevice.create(workspaceCacheId),
 				CheerpX.WebDevice.create(''),
 				CheerpX.WebDevice.create('documents'),
 				CheerpX.DataDevice.create()
@@ -1406,6 +1410,8 @@ export function createVmManager(configObj, options = {}) {
 			if (disposed) return;
 
 			blockCache = createdCache;
+			workspaceDevice = createdWorkspace;
+			dataDevice = createdDataDevice;
 			bootState.set({
 				phase: 'overlay',
 				progress: 70,
@@ -1425,7 +1431,8 @@ export function createVmManager(configObj, options = {}) {
 				{ type: 'devpts', path: '/dev/pts' },
 				{ type: 'proc', path: '/proc' },
 				{ type: 'sys', path: '/sys' },
-				{ type: 'dir', dev: documentsDevice, path: '/home/user/documents' }
+				{ type: 'dir', dev: documentsDevice, path: '/home/user/documents' },
+				{ type: 'dir', dev: workspaceDevice, path: '/home/user/workspace' }
 			];
 
 			bootState.set({
@@ -1618,12 +1625,56 @@ export function createVmManager(configObj, options = {}) {
 	}
 
 	async function resetDisk() {
-		if (!blockCache) return false;
-		await blockCache.reset();
+		if (blockCache?.reset) {
+			await blockCache.reset();
+		}
 		if (typeof location !== 'undefined') {
 			location.reload();
 		}
 		return true;
+	}
+
+	async function resetWorkspace({ reload = false, skipBridgeReset = false } = {}) {
+		if (workspaceDevice?.reset) {
+			await workspaceDevice.reset();
+		}
+		if (!skipBridgeReset && typeof options.onWorkspaceReset === 'function') {
+			await options.onWorkspaceReset();
+		}
+		addToast({ message: 'Workspace reset complete', type: 'info' });
+		if (reload && typeof location !== 'undefined') {
+			location.reload();
+		}
+		return true;
+	}
+
+	async function runCommandInTerminal(commandStr, { newTab = false, title = 'run', cwd = '/home/user/workspace' } = {}) {
+		if (disposed || !commandStr) return { status: 1 };
+		setActiveVt(1);
+		if (newTab && cx) {
+			return await runSession({
+				title,
+				cmd: '/bin/sh',
+				args: ['-c', commandStr],
+				cwd
+			});
+		}
+		let active = getActiveTab();
+		if (!active || active.kind === 'task') {
+			if (tabs.has('tab-1')) {
+				switchTab('tab-1');
+				active = tabs.get('tab-1');
+			} else {
+				const newId = createShellTab({ title });
+				active = newId ? tabs.get(newId) : null;
+			}
+		}
+		if (active?.kind === 'primary') {
+			sendInputToActive(`${commandStr}\r`);
+		} else if (active?.shellController) {
+			active.shellController.sendInput(`${commandStr}\n`);
+		}
+		return { status: 0 };
 	}
 
 	function networkLogin() {
@@ -1734,10 +1785,14 @@ export function createVmManager(configObj, options = {}) {
 		copySelection,
 		pasteClipboard,
 		resetDisk,
+		resetWorkspace,
+		runCommandInTerminal,
 		networkLogin,
 		getActiveTerminal,
 		getCheerpX: () => cx,
 		getBlockCache: () => blockCache,
+		getDataDevice: () => dataDevice,
+		getWorkspaceDevice: () => workspaceDevice,
 		getTelemetry: () => telemetry,
 		dispose
 	};

@@ -9,7 +9,25 @@ const BASE_FA_CLASSES = new Set([
 	'fa-solid',
 	'fa-brands',
 	'fa-regular',
-	'fa-classic'
+	'fa-classic',
+	'fa-folder-open',
+	'fa-code',
+	'fa-folder',
+	'fa-folder-plus',
+	'fa-file-code',
+	'fa-file',
+	'fa-upload',
+	'fa-download',
+	'fa-file-export',
+	'fa-file-import',
+	'fa-trash-can',
+	'fa-plus',
+	'fa-pen',
+	'fa-play',
+	'fa-floppy-disk',
+	'fa-rotate-right',
+	'fa-arrow-up',
+	'fa-broom'
 ]);
 
 const SOURCE_EXTENSIONS = new Set(['.svelte', '.js', '.ts', '.html']);

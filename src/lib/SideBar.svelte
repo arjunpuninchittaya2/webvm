@@ -5,6 +5,8 @@
 	import NetworkingTab from './NetworkingTab.svelte';
 	import CpuTab from './CpuTab.svelte';
 	import DiskTab from './DiskTab.svelte';
+	import FilesTab from './FilesTab.svelte';
+	import EditorTab from './EditorTab.svelte';
 	import PostsTab from './PostsTab.svelte';
 	import DiscordTab from './DiscordTab.svelte';
 	import GitHubTab from './GitHubTab.svelte';
@@ -17,6 +19,8 @@
 		{ icon: 'fas fa-wifi', info: 'Networking', activity: null },
 		{ icon: 'fas fa-microchip', info: 'CPU', activity: cpuActivity },
 		{ icon: 'fas fa-compact-disc', info: 'Disk', activity: diskActivity },
+		{ icon: 'fas fa-folder-open', info: 'Files', activity: null },
+		{ icon: 'fas fa-code', info: 'Editor', activity: null },
 		{ icon: 'fas fa-robot', info: 'ClaudeAI', activity: aiActivity },
 		null,
 		{ icon: 'fas fa-book-open', info: 'Posts', activity: null },
@@ -135,7 +139,16 @@
 		}
 	}
 
-	export let handleTool;
+	export let handleTool = null;
+	export let vmManager = null;
+	export let fileBridge = null;
+
+	let editorTargetFile = null;
+	function openFileInEditor(fileObj) {
+		editorTargetFile = fileObj;
+		activeInfo = 'Editor';
+		panelSource = sideBarPinned ? 'pin' : 'click';
+	}
 </script>
 
 <svelte:window on:pointerdown={handleWindowPointerDown} on:keydown={handleWindowKeydown} />
@@ -186,7 +199,19 @@
 		{:else if activeInfo === 'CPU'}
 			<CpuTab/>
 		{:else if activeInfo === 'Disk'}
-			<DiskTab on:reset/>
+			<DiskTab on:reset on:resetWorkspace/>
+		{:else if activeInfo === 'Files'}
+			<FilesTab
+				{vmManager}
+				{fileBridge}
+				on:openInEditor={(e) => openFileInEditor(e.detail)}
+			/>
+		{:else if activeInfo === 'Editor'}
+			<EditorTab
+				{vmManager}
+				{fileBridge}
+				initialFile={editorTargetFile}
+			/>
 		{:else if activeInfo === 'ClaudeAI'}
 			{#await import('./AnthropicTab.svelte') then { default: AnthropicTab }}
 				<AnthropicTab handleTool={handleTool} />

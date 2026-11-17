@@ -29,6 +29,11 @@
 		addToast
 	} from '$lib/stores/sessions.js';
 	import { createVmManager } from '$lib/vm/vmManager.js';
+	import {
+		ensureWorkspaceHydrated,
+		importHostFiles,
+		resetWorkspace as resetWorkspaceBridge
+	} from '$lib/fs/fileBridge.js';
 
 	export let configObj = null;
 	export let processCallback = null;
@@ -47,30 +52,85 @@
 	let searchMatchIndex = -1;
 	let searchMatchCount = 0;
 
+	let isDraggingOver = false;
+	let dragDepth = 0;
+
 	const vmManager = createVmManager(configObj, {
 		cacheId,
 		networkInterface,
-		processCallback
+		processCallback,
+		onWorkspaceReset: () => resetWorkspaceBridge({ skipVmReset: true })
 	});
 
 	let unsubSearch = null;
 
-	function preventDefaults(e) {
+	function handleDragEnter(e) {
 		e.preventDefault();
 		e.stopPropagation();
+		dragDepth += 1;
+		isDraggingOver = true;
+	}
+
+	function handleDragOver(e) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (e.dataTransfer) {
+			e.dataTransfer.dropEffect = 'copy';
+		}
+		isDraggingOver = true;
+	}
+
+	function handleDragLeave(e) {
+		e.preventDefault();
+		e.stopPropagation();
+		dragDepth = Math.max(0, dragDepth - 1);
+		if (dragDepth === 0) {
+			isDraggingOver = false;
+		}
+	}
+
+	async function handleDrop(e) {
+		e.preventDefault();
+		e.stopPropagation();
+		dragDepth = 0;
+		isDraggingOver = false;
+
+		let files = Array.from(e.dataTransfer?.files || []);
+		if (files.length === 0 && e.dataTransfer?.items) {
+			for (const item of Array.from(e.dataTransfer.items)) {
+				if (item.kind === 'file') {
+					const f = item.getAsFile?.();
+					if (f) files.push(f);
+				}
+			}
+		}
+		if (files.length === 0) return;
+
+		const res = await importHostFiles(files, '', { vmManager });
+		if (res.errors.length > 0) {
+			addToast({ message: res.errors[0], type: 'error' });
+		}
+		if (res.imported.length > 0) {
+			const msg =
+				res.extractedArchives.length > 0
+					? `Extracted ${res.extractedArchives.join(', ')} into /home/user/workspace`
+					: `Imported ${res.imported.length} file(s) to /home/user/workspace`;
+			addToast({ message: msg, type: 'success' });
+		}
 	}
 
 	onMount(async () => {
+		ensureWorkspaceHydrated();
 		unsubSearch = vmManager.onSearchResultsChange(({ resultIndex, resultCount }) => {
 			searchMatchIndex = resultIndex;
 			searchMatchCount = resultCount;
 		});
 
 		if (consoleElement) {
-			consoleElement.addEventListener('dragover', preventDefaults, false);
-			consoleElement.addEventListener('dragenter', preventDefaults, false);
-			consoleElement.addEventListener('dragleave', preventDefaults, false);
-			consoleElement.addEventListener('drop', preventDefaults, false);
+			consoleElement.addEventListener('dragover', handleDragOver, false);
+			consoleElement.addEventListener('dragenter', handleDragEnter, false);
+			consoleElement.addEventListener('dragleave', handleDragLeave, false);
+			consoleElement.addEventListener('drop', handleDrop, false);
 		}
 
 		await vmManager.boot({
@@ -81,10 +141,10 @@
 
 	onDestroy(() => {
 		if (consoleElement) {
-			consoleElement.removeEventListener('dragover', preventDefaults, false);
-			consoleElement.removeEventListener('dragenter', preventDefaults, false);
-			consoleElement.removeEventListener('dragleave', preventDefaults, false);
-			consoleElement.removeEventListener('drop', preventDefaults, false);
+			consoleElement.removeEventListener('dragover', handleDragOver, false);
+			consoleElement.removeEventListener('dragenter', handleDragEnter, false);
+			consoleElement.removeEventListener('dragleave', handleDragLeave, false);
+			consoleElement.removeEventListener('drop', handleDrop, false);
 		}
 		unsubSearch?.();
 		vmManager.dispose();
@@ -113,6 +173,10 @@
 
 	async function handleReset() {
 		await vmManager.resetDisk();
+	}
+
+	async function handleResetWorkspace() {
+		await resetWorkspaceBridge({ vmManager });
 	}
 
 	async function handleTool(tool) {
@@ -164,8 +228,10 @@
 >
 	<SideBar
 		bind:sideBarPinned
+		{vmManager}
 		on:connect={handleConnect}
 		on:reset={handleReset}
+		on:resetWorkspace={handleResetWorkspace}
 		handleTool={handleTool}
 		on:sidebarPinChange={handleSidebarPinChange}
 	>
@@ -234,6 +300,17 @@
 				class="absolute inset-0 z-10 p-1 scrollbar"
 				id="console"
 			></div>
+
+			{#if isDraggingOver}
+				<div
+					data-testid="dropzone-overlay"
+					class="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-amber-400 bg-neutral-900/80 text-amber-200"
+				>
+					<i class="fas fa-upload text-3xl mb-2" aria-hidden="true"></i>
+					<p class="text-sm font-semibold">Drop files, scripts, archives, or i386 binaries</p>
+					<p class="text-xs text-gray-300">Imports into /home/user/workspace</p>
+				</div>
+			{/if}
 
 			<BootProgressOverlay />
 		</div>

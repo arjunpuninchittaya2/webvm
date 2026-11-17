@@ -25,6 +25,12 @@ describe('Build artifacts & cleanup invariants', () => {
 		expect(combinedCss).toContain('.fa-github');
 		expect(combinedCss).toContain('.fa-discord');
 		expect(combinedCss).toContain('.fa-thumbtack');
+		expect(combinedCss).toContain('.fa-folder-open');
+		expect(combinedCss).toContain('.fa-code');
+		expect(combinedCss).toContain('.fa-upload');
+		expect(combinedCss).toContain('.fa-download');
+		expect(combinedCss).toContain('.fa-play');
+		expect(combinedCss).toContain('.fa-floppy-disk');
 		// Confirm unused FontAwesome icon bloat is pruned
 		expect(combinedCss).not.toContain('.fa-hippo');
 		// Confirm render-blocking Google Fonts @import is gone

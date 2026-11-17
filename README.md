@@ -185,6 +185,7 @@ WebVM configures the following CheerpX Linux mount points (`src/lib/vm/vmManager
 | `/web` | `dir` | `WebDevice("")` (web server root files) |
 | `/data` | `dir` | `DataDevice` (host-to-VM data channel) |
 | `/home/user/documents` | `dir` | `WebDevice("documents")` (sample documents) |
+| `/home/user/workspace` | `dir` | `IDBDevice("workspace")` (persistent user workspace, preserved across OS disk resets) |
 | `/dev`, `/dev/pts`, `/proc`, `/sys` | virtual | Linux device, PTY, proc, and sysfs pseudo-filesystems |
 
 #### Recent Foundation & Efficiency Improvements (M1)
@@ -212,6 +213,14 @@ WebVM configures the following CheerpX Linux mount points (`src/lib/vm/vmManager
 - `Ctrl+Shift+F`: Toggle terminal search bar (`Enter` next, `Shift+Enter` previous, `Esc` close)
 - `Ctrl+Shift+C`: Copy selected terminal text
 - `Ctrl+Shift+V`: Paste clipboard into active terminal (or X11 display on VT7)
+
+#### Host ↔ VM File Bridge, Persistent Workspace & Code Editor (M3)
+
+- **Dedicated Persistent Workspace (`#21`)**: `src/lib/vm/vmManager.js` mounts a dedicated `IDBDevice("workspace")` at `/home/user/workspace` separate from the OS root `OverlayDevice` cache. Resetting the OS root disk (`DiskTab` → `Reset disk`) preserves `/home/user/workspace`, while an independent `Reset workspace` control clears only workspace storage.
+- **Dual-Layer Host ↔ VM File Bridge & Archive Extraction (`#22`)**: `src/lib/fs/fileBridge.js` and `src/lib/fs/archiveHelper.js` provide IndexedDB (`webvm_workspace_vfs`) + `localStorage` (`webvm.workspace.v1`) persistence, `DataDevice` / `/home/user/workspace` synchronization, client-side `.tar`, `.tar.gz`/`.tgz`, and `.zip` extraction with path-traversal protection, drag-and-drop import onto `#console`, multi-file upload, and automatic ELF (`i386` vs `x86_64`) / shebang `+x` detection.
+- **File Manager & Host Download (`#23`)**: `src/lib/FilesTab.svelte` (`Files` sidebar tab) supports directory navigation, `mkdir`, inline rename, recursive delete, `+x` permission toggling, 1-click `Run`, and host browser download (`IDBDevice.readFileAsBlob` + `Blob` fallback).
+- **Workspace Snapshot Export & Import (`#24`)**: Export and restore `.json` workspace snapshots (`exportWorkspaceSnapshot` / `importWorkspaceSnapshot`) with schema validation and non-destructive error handling.
+- **Built-in Code/File Editor (`#25`)**: `src/lib/EditorTab.svelte` (`Editor` sidebar tab) provides in-browser file editing with binary/non-UTF-8 guard, `Tab` indentation, `Ctrl+S` save, host download, and 1-click **Run in Terminal**.
 
 
 For the full Alpine desktop environment, see [leaningtech/alpine-image](https://github.com/leaningtech/alpine-image).
