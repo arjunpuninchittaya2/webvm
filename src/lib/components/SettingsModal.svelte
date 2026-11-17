@@ -6,6 +6,7 @@
 		TERMINAL_THEMES,
 		FONT_FAMILY_PRESETS
 	} from '$lib/stores/settings.js';
+	import { testBell } from '$lib/audio/bell.js';
 
 	export let open = false;
 
@@ -248,6 +249,24 @@
 					/>
 					<span>Show Virtual Key Bar</span>
 				</label>
+
+				<label class="flex items-center gap-2 cursor-pointer">
+					<input
+						type="checkbox"
+						data-testid="setting-audio-bell"
+						checked={$settings.audioBell}
+						on:change={(e) => settings.updateSetting('audioBell', e.currentTarget.checked)}
+					/>
+					<span>Audio terminal bell</span>
+				</label>
+				<button
+					type="button"
+					data-testid="setting-test-bell"
+					class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs text-gray-200 justify-self-start"
+					on:click={() => testBell()}
+				>
+					Test bell
+				</button>
 			</div>
 
 			<div class="mt-5 pt-3 border-t border-neutral-800 flex items-center justify-between">

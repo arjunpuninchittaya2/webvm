@@ -7,6 +7,9 @@
 	import DiskTab from './DiskTab.svelte';
 	import FilesTab from './FilesTab.svelte';
 	import EditorTab from './EditorTab.svelte';
+	import SystemMonitorTab from './SystemMonitorTab.svelte';
+	import BootProfileTab from './BootProfileTab.svelte';
+	import ServicesTab from './ServicesTab.svelte';
 	import AppsTab from './components/AppsTab.svelte';
 	import PostsTab from './PostsTab.svelte';
 	import DiscordTab from './DiscordTab.svelte';
@@ -24,6 +27,9 @@
 		{ icon: 'fas fa-code', info: 'Editor', activity: null },
 		{ icon: 'fas fa-store', info: 'Apps', activity: null },
 		{ icon: 'fas fa-globe', info: 'Web Preview', activity: null },
+		{ icon: 'fas fa-chart-line', info: 'System Monitor', activity: null },
+		{ icon: 'fas fa-sliders', info: 'Boot Profiles', activity: null },
+		{ icon: 'fas fa-gears', info: 'Services & Cron', activity: null },
 		{ icon: 'fas fa-robot', info: 'ClaudeAI', activity: aiActivity },
 		null,
 		{ icon: 'fas fa-book-open', info: 'Posts', activity: null },
@@ -145,6 +151,7 @@
 	export let handleTool = null;
 	export let vmManager = null;
 	export let fileBridge = null;
+	export let supervisor = null;
 
 	let editorTargetFile = null;
 	function openFileInEditor(fileObj) {
@@ -227,6 +234,12 @@
 				{fileBridge}
 				initialSubTab="preview"
 			/>
+		{:else if activeInfo === 'System Monitor'}
+			<SystemMonitorTab {vmManager} />
+		{:else if activeInfo === 'Boot Profiles'}
+			<BootProfileTab />
+		{:else if activeInfo === 'Services & Cron'}
+			<ServicesTab {supervisor} />
 		{:else if activeInfo === 'ClaudeAI'}
 			{#await import('./AnthropicTab.svelte') then { default: AnthropicTab }}
 				<AnthropicTab handleTool={handleTool} />

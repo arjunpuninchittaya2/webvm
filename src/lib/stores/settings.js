@@ -147,7 +147,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
 	powerSaver: false,
 	sidebarPin: false,
 	displayScale: 1,
-	virtualKeysVisible: false
+	virtualKeysVisible: false,
+	audioBell: false
 });
 
 const VALID_THEMES = new Set(Object.keys(TERMINAL_THEMES));
@@ -186,7 +187,8 @@ export function sanitizeSettings(raw) {
 		virtualKeysVisible:
 			typeof src.virtualKeysVisible === 'boolean'
 				? src.virtualKeysVisible
-				: DEFAULT_SETTINGS.virtualKeysVisible
+				: DEFAULT_SETTINGS.virtualKeysVisible,
+		audioBell: typeof src.audioBell === 'boolean' ? src.audioBell : DEFAULT_SETTINGS.audioBell
 	};
 }
 

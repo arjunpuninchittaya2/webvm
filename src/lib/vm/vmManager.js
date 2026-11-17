@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { displayConfig } from '$lib/anthropic.js';
 import { introMessage, errorMessage, unexpectedErrorMessage } from '$lib/messages.js';
 import { tryPlausible } from '$lib/plausible.js';
+import { ringTerminalBell } from '$lib/audio/bell.js';
 import { settings, getThemeDefinition } from '$lib/stores/settings.js';
 import {
 	MAX_SESSIONS,
@@ -24,6 +25,7 @@ import {
 	resetSessionsStore
 } from '$lib/stores/sessions.js';
 import { createTelemetryTracker } from './telemetry.js';
+import { buildSnapshotScript, parseProcSnapshot } from './processMonitor.js';
 import {
 	createTerminalBatcher,
 	createInputWriter,
@@ -977,6 +979,9 @@ export function createVmManager(configObj, options = {}) {
 		});
 
 		const disposables = [osc52Disposer];
+		if (typeof term.onBell === 'function') {
+			disposables.push(term.onBell(() => ringTerminalBell(get(settings).audioBell)));
+		}
 		if (searchAddon?.onDidChangeResults) {
 			disposables.push(
 				searchAddon.onDidChangeResults((ev) => {
@@ -1138,6 +1143,58 @@ export function createVmManager(configObj, options = {}) {
 			tab.batcher.writeText(`\r\n[Task failed: ${err?.message || err}]\r\n`);
 			return { status: 1 };
 		}
+	}
+
+	function isReady() {
+		return Boolean(cx) && !disposed;
+	}
+
+	function backgroundOpts() {
+		return {
+			cwd: configObj?.opts?.cwd || '/home/user',
+			env: configObj?.opts?.env,
+			uid: configObj?.opts?.uid,
+			gid: configObj?.opts?.gid
+		};
+	}
+
+	// Runs a detached process (not serialized with terminal tasks, no tab). Resolves on exit.
+	async function spawnBackground(id, shellCommand) {
+		if (!isReady()) throw new Error('VM is not ready');
+		const res = await cx.run('/bin/sh', ['-c', shellCommand], backgroundOpts());
+		return { id, status: typeof res?.status === 'number' ? res.status : 0 };
+	}
+
+	async function execQuiet(script) {
+		if (!isReady()) throw new Error('VM is not ready');
+		const res = await cx.run('/bin/sh', ['-c', script], backgroundOpts());
+		return { status: typeof res?.status === 'number' ? res.status : 0 };
+	}
+
+	const PS_SNAPSHOT_PATH = '/home/user/workspace/.webvm-ps';
+
+	// Dumps /proc inside the VM into the workspace volume and reads it back from the host side.
+	async function snapshotProcesses() {
+		if (!isReady() || !workspaceDevice?.readFileAsBlob) return null;
+		await execQuiet(buildSnapshotScript(PS_SNAPSHOT_PATH));
+		const blob = await workspaceDevice.readFileAsBlob('/.webvm-ps');
+		return parseProcSnapshot(await blob.text());
+	}
+
+	// "Stop" for a terminal session: sends Ctrl-C to its foreground job.
+	function interruptSession(id) {
+		const tab = tabs.get(id);
+		if (!tab || disposed) return false;
+		if (tab.kind === 'primary') {
+			if (!isReady()) return false;
+			inputWriter.write('\x03');
+			return true;
+		}
+		if (tab.shellController) {
+			tab.shellController.sendInput('\x03');
+			return true;
+		}
+		return false;
 	}
 
 	function renameTab(id, nextTitle) {
@@ -1768,6 +1825,11 @@ export function createVmManager(configObj, options = {}) {
 		setDisplayElement,
 		createShellTab,
 		runSession,
+		isReady,
+		spawnBackground,
+		execQuiet,
+		snapshotProcesses,
+		interruptSession,
 		switchTab,
 		renameTab,
 		closeTab,

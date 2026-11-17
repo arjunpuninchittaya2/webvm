@@ -29,6 +29,9 @@
 		addToast
 	} from '$lib/stores/sessions.js';
 	import { createVmManager } from '$lib/vm/vmManager.js';
+	import { resolveBootConfig, loadProfile } from '$lib/vm/bootProfile.js';
+	import { createSupervisor } from '$lib/vm/serviceSupervisor.js';
+	import { notifyDesktop } from '$lib/audio/bell.js';
 	import {
 		ensureWorkspaceHydrated,
 		importHostFiles,
@@ -57,11 +60,25 @@
 	let isDraggingOver = false;
 	let dragDepth = 0;
 
+	// Apply the saved boot profile (distro / custom .ext2 / uid / gid / env / cmd) onto the route config.
+	const resolvedBoot = resolveBootConfig(configObj, loadProfile(), cacheId);
+	configObj = resolvedBoot.config;
+	cacheId = resolvedBoot.cacheId;
+
 	const vmManager = createVmManager(configObj, {
 		cacheId,
 		networkInterface,
 		processCallback,
 		onWorkspaceReset: () => resetWorkspaceBridge({ skipVmReset: true })
+	});
+
+	const supervisor = createSupervisor({
+		vm: vmManager,
+		storage: typeof localStorage !== 'undefined' ? localStorage : null,
+		notify: (message, type) => {
+			addToast({ message, type });
+			notifyDesktop('WebVM', message);
+		}
 	});
 
 	let unsubSearch = null;
@@ -123,6 +140,7 @@
 
 	onMount(async () => {
 		ensureWorkspaceHydrated();
+		supervisor.startTimer();
 		unsubSearch = vmManager.onSearchResultsChange(({ resultIndex, resultCount }) => {
 			searchMatchIndex = resultIndex;
 			searchMatchCount = resultCount;
@@ -149,6 +167,7 @@
 			consoleElement.removeEventListener('drop', handleDrop, false);
 		}
 		unsubSearch?.();
+		supervisor.dispose();
 		vmManager.dispose();
 	});
 
@@ -246,6 +265,7 @@
 	<SideBar
 		bind:sideBarPinned
 		{vmManager}
+		{supervisor}
 		on:connect={handleConnect}
 		on:reset={handleReset}
 		on:resetWorkspace={handleResetWorkspace}
