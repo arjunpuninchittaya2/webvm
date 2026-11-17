@@ -25,6 +25,7 @@
 		activeRenderer,
 		pageHidden,
 		tailscaleIp,
+		stickyModifiers,
 		addToast
 	} from '$lib/stores/sessions.js';
 	import { createVmManager } from '$lib/vm/vmManager.js';
@@ -233,11 +234,18 @@
 				class="absolute inset-0 z-10 p-1 scrollbar"
 				id="console"
 			></div>
+
+			<BootProgressOverlay />
 		</div>
 
 		<VirtualKeyBar
 			visible={$settings.virtualKeysVisible}
 			activeVt={$activeVt}
+			stickyCtrl={$stickyModifiers.ctrl}
+			ctrlLocked={$stickyModifiers.ctrlLocked}
+			stickyAlt={$stickyModifiers.alt}
+			altLocked={$stickyModifiers.altLocked}
+			on:modifierChange={(e) => vmManager.setStickyModifiers(e.detail)}
 			on:sendKey={(e) => vmManager.sendInputToActive(e.detail)}
 			on:copy={() => vmManager.copySelection()}
 			on:paste={() => vmManager.pasteClipboard()}
@@ -246,7 +254,6 @@
 		<StatusBar />
 	</div>
 
-	<BootProgressOverlay />
 	<ToastContainer />
 	<SettingsModal
 		open={settingsOpen}

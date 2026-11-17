@@ -24,38 +24,56 @@
 		{ icon: 'fab fa-github', info: 'GitHub', activity: null },
 	];
 	let dispatch = createEventDispatcher();
-	let activeInfo = $settings.sidebarPin ? 'Information' : null; // Tracks currently visible info.
-	let hideTimeout = 0; // Timeout for hiding info panel.
 	export let sideBarPinned = $settings.sidebarPin;
+	let activeInfo = sideBarPinned ? 'Information' : null; // Tracks currently visible info.
+	let panelSource = sideBarPinned ? 'pin' : null; // 'hover' | 'click' | 'pin' | null
+	let hideTimeout = 0; // Timeout for hiding info panel.
 	let lastSyncedPin = $settings.sidebarPin;
+	let sidebarRoot = null;
+
+	$: if (sideBarPinned && panelSource !== 'pin') {
+		panelSource = 'pin';
+		if (!activeInfo) {
+			activeInfo = 'Information';
+		}
+	}
 
 	$: if ($settings.sidebarPin !== lastSyncedPin) {
 		lastSyncedPin = $settings.sidebarPin;
 		if (sideBarPinned !== $settings.sidebarPin) {
 			sideBarPinned = $settings.sidebarPin;
-			if (sideBarPinned && !activeInfo) {
-				activeInfo = 'Information';
-			} else if (!sideBarPinned) {
+			if (sideBarPinned) {
+				panelSource = 'pin';
+				if (!activeInfo) {
+					activeInfo = 'Information';
+				}
+			} else {
 				activeInfo = null;
+				panelSource = null;
 			}
 			dispatch('sidebarPinChange', sideBarPinned);
 		}
 	}
 
 	function showInfo(info) {
-		if (sideBarPinned) return;
+		if (sideBarPinned || panelSource === 'click' || panelSource === 'pin') return;
 		clearTimeout(hideTimeout);
 		hideTimeout = 0;
 		activeInfo = info;
+		panelSource = 'hover';
 	}
 	function hideInfo() {
-		// Never remove the sidebar if pinning is enabled
-		if (sideBarPinned)
+		// Never remove the sidebar if pinning is enabled or opened via click
+		if (sideBarPinned || panelSource !== 'hover') {
 			return;
+		}
 		// Prevents multiple timers and hides the info panel after 400ms unless interrupted.
 		clearTimeout(hideTimeout);
 		hideTimeout = setTimeout(() => {
-			activeInfo = null;
+			if (!sideBarPinned && panelSource === 'hover') {
+				activeInfo = null;
+				panelSource = null;
+			}
 			hideTimeout = 0;
 		}, 400);
 	}
@@ -63,18 +81,25 @@
 		clearTimeout(hideTimeout);
 		hideTimeout = 0;
 	}
-	// Toggles the info panel for the clicked icon, or switches active tab when pinned.
+	// Toggles or promotes the info panel for the clicked icon, or switches active tab when pinned.
 	function handleClick(icon) {
 		clearTimeout(hideTimeout);
 		hideTimeout = 0;
 		if (sideBarPinned) {
 			activeInfo = icon.info;
+			panelSource = 'pin';
 			return;
 		}
 		if (activeInfo === icon.info) {
-			activeInfo = null;
+			if (panelSource === 'hover') {
+				panelSource = 'click';
+			} else {
+				activeInfo = null;
+				panelSource = null;
+			}
 		} else {
 			activeInfo = icon.info;
+			panelSource = 'click';
 		}
 	}
 
@@ -82,16 +107,46 @@
 		sideBarPinned = !sideBarPinned;
 		lastSyncedPin = sideBarPinned;
 		settings.updateSetting('sidebarPin', sideBarPinned);
-		if (sideBarPinned && !activeInfo) {
-			activeInfo = 'Information';
+		if (sideBarPinned) {
+			panelSource = 'pin';
+			if (!activeInfo) {
+				activeInfo = 'Information';
+			}
+		} else {
+			panelSource = activeInfo ? 'hover' : null;
 		}
 		dispatch('sidebarPinChange', sideBarPinned);
+	}
+
+	function handleWindowPointerDown(e) {
+		if (sideBarPinned || panelSource !== 'click' || !activeInfo) return;
+		const target = e.target;
+		if (sidebarRoot && (!(target instanceof Node) || !sidebarRoot.contains(target))) {
+			activeInfo = null;
+			panelSource = null;
+		}
+	}
+
+	function handleWindowKeydown(e) {
+		if (sideBarPinned || panelSource !== 'click' || !activeInfo) return;
+		if (e.key === 'Escape') {
+			activeInfo = null;
+			panelSource = null;
+		}
 	}
 
 	export let handleTool;
 </script>
 
-<div class="relative z-30 flex flex-row {sideBarPinned && activeInfo ? 'w-[23.5rem]' : 'w-14'} h-full bg-neutral-700 shrink-0">
+<svelte:window on:pointerdown={handleWindowPointerDown} on:keydown={handleWindowKeydown} />
+
+<div
+	bind:this={sidebarRoot}
+	role="region"
+	aria-label="Sidebar"
+	class="relative z-30 flex flex-row {sideBarPinned && activeInfo ? 'w-[23.5rem]' : 'w-14'} h-full bg-neutral-700 shrink-0"
+	on:mouseleave={hideInfo}
+>
 	<div class="flex flex-col shrink-0 w-14 text-gray-300">
 		{#each icons as i}
 			{#if i}
@@ -113,7 +168,6 @@
 		class="relative flex flex-col gap-5 shrink-0 w-80 h-full z-30 p-2 bg-neutral-600 text-gray-100 opacity-95 overflow-y-auto scrollbar"
 		class:hidden={!activeInfo}
 		on:mouseenter={handleMouseEnterPanel}
-		on:mouseleave={hideInfo}
 	>
 		<div class="absolute right-2 top-2">
 			<SmallButton

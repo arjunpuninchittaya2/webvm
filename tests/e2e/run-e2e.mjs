@@ -132,13 +132,80 @@ async function main() {
 			await page.locator('[data-testid="close-tab-tab-2"]').click();
 			assert.equal(await tabLocator.count(), 1, `Expected 1 tab after closing secondary tab on ${route}`);
 
-			// Verify virtual key bar toggle & collapsible F1-F12 row
+			// (d) Verify VirtualKeyBar works cleanly without BootProgressOverlay interception, and (c) sticky Ctrl releases cleanly
+			await page.locator('[data-testid="new-tab-btn"]').click();
 			await page.locator('[data-testid="toolbar-vkeys-btn"]').click();
 			await page.locator('[data-testid="virtual-key-bar"]').waitFor({ state: 'visible', timeout: 5000 });
+
+			const overlayBox = await page.locator('[data-testid="boot-progress-overlay"]').boundingBox().catch(() => null);
+			const vkeyBox = await page.locator('[data-testid="virtual-key-bar"]').boundingBox();
+			if (overlayBox && vkeyBox) {
+				assert.ok(
+					overlayBox.y + overlayBox.height <= vkeyBox.y + 1,
+					`Expected BootProgressOverlay (${JSON.stringify(overlayBox)}) not to overlap VirtualKeyBar (${JSON.stringify(vkeyBox)})`
+				);
+			}
+
+			// Sticky Ctrl via vkey-ctrl + vkey-mod-input
+			const ctrlBtn = page.locator('[data-testid="vkey-ctrl"]');
+			await ctrlBtn.click();
+			assert.equal(await ctrlBtn.getAttribute('aria-pressed'), 'true');
+			const modInput = page.locator('[data-testid="vkey-mod-input"]');
+			await modInput.waitFor({ state: 'visible', timeout: 5000 });
+			await modInput.fill('c');
+			assert.equal(await ctrlBtn.getAttribute('aria-pressed'), 'false', 'Expected sticky Ctrl to auto-release after vkey-mod-input');
+
+			// Sticky Ctrl + physical keyboard key in active terminal
+			await ctrlBtn.click();
+			assert.equal(await ctrlBtn.getAttribute('aria-pressed'), 'true');
+			await page.locator('#console .xterm-helper-textarea').last().focus();
+			await page.keyboard.press('u');
+			assert.equal(await ctrlBtn.getAttribute('aria-pressed'), 'false', 'Expected sticky Ctrl to auto-release after physical key');
+
 			await page.locator('[data-testid="vkey-fn-toggle"]').click();
 			await page.locator('[data-testid="virtual-fn-row"]').waitFor({ state: 'visible', timeout: 5000 });
 			await page.locator('[data-testid="toolbar-vkeys-btn"]').click();
 			await page.locator('[data-testid="virtual-key-bar"]').waitFor({ state: 'hidden', timeout: 5000 });
+
+			// (a) Verify toggling Renderer webgl/auto -> dom keeps/restores .xterm-rows visible and renders shell output without blanking
+			await page.locator('[data-session-id="tab-3"] .xterm-helper-textarea').focus();
+			await page.keyboard.type('help');
+			await page.keyboard.press('Enter');
+			await page.waitForTimeout(150);
+
+			await page.locator('[data-testid="settings-btn"]').click();
+			await page.locator('[data-testid="setting-renderer"]').selectOption('webgl');
+			await page.locator('[data-testid="setting-renderer"]').selectOption('dom');
+			await page.locator('[data-testid="settings-done-btn"]').click();
+
+			await page.locator('[data-session-id="tab-3"] .xterm-rows').waitFor({ state: 'visible', timeout: 5000 });
+			await page.locator('[data-session-id="tab-3"] .xterm-helper-textarea').focus();
+			await page.keyboard.type('pwd');
+			await page.keyboard.press('Enter');
+			await page.waitForFunction(
+				() => {
+					const txt = document.querySelector('[data-session-id="tab-3"] .xterm-rows')?.textContent || '';
+					return txt.includes('Built-ins') && (txt.includes('/home/user') || txt.includes('/root'));
+				},
+				null,
+				{ timeout: 5000 }
+			);
+
+			await page.locator('[data-testid="close-tab-tab-3"]').click();
+			assert.equal(await tabLocator.count(), 1, `Expected 1 tab after closing secondary tab on ${route}`);
+
+			// (e) Verify StatusBar ECO Power-Saver toggle works
+			const ecoBtn = page.locator('[data-testid="status-power-saver"]');
+			await ecoBtn.waitFor({ state: 'visible', timeout: 5000 });
+			assert.equal(await ecoBtn.getAttribute('aria-pressed'), 'false');
+			await ecoBtn.click();
+			assert.equal(await ecoBtn.getAttribute('aria-pressed'), 'true');
+			assert.ok(
+				await page.locator('main').evaluate((el) => el.classList.contains('power-saver')),
+				'Expected main.power-saver class when ECO enabled'
+			);
+			await ecoBtn.click();
+			assert.equal(await ecoBtn.getAttribute('aria-pressed'), 'false');
 
 			// Verify search bar toggle via toolbar & Ctrl+Shift+F
 			await page.locator('[data-testid="toolbar-search-btn"]').click();
@@ -154,6 +221,20 @@ async function main() {
 			await searchInput.waitFor({ state: 'hidden', timeout: 5000 });
 
 			if (route === '/') {
+				// (b) Unpinned sidebar click promotes hover to click and keeps panel open when mouse leaves
+				await page.locator('button[aria-label="CPU"]').hover();
+				await page.getByText('Virtual CPU:').waitFor({ state: 'visible', timeout: 5000 });
+				await page.locator('button[aria-label="CPU"]').click();
+				await page.mouse.move(700, 400);
+				await page.waitForTimeout(500);
+				assert.equal(
+					await page.getByText('Virtual CPU:').isVisible(),
+					true,
+					'Expected unpinned sidebar panel to remain open after clicking icon and moving mouse away'
+				);
+				await page.keyboard.press('Escape');
+				await page.getByText('Virtual CPU:').waitFor({ state: 'hidden', timeout: 5000 });
+
 				// Sidebar Information & ClaudeAI tabs + pinned-tab click test
 				await page.locator('.fa-info-circle').first().hover();
 				const heroImg = page.locator('img[src="assets/webvm_hero.png"]');

@@ -9,12 +9,14 @@ import {
 	bootState,
 	activeRenderer,
 	vmState,
+	stickyModifiers,
+	DEFAULT_STICKY_MODIFIERS,
 	resetSessionsStore
 } from '../../src/lib/stores/sessions.js';
 import { settings, resetSettings } from '../../src/lib/stores/settings.js';
 import { displayConfig } from '../../src/lib/anthropic.js';
 
-function createFakeTerminalEnv({ webglShouldThrow = false } = {}) {
+function createFakeTerminalEnv({ webglShouldThrow = false, webglDisposeShouldThrow = false } = {}) {
 	const createdTerms = [];
 	let contextLossCb = null;
 
@@ -30,6 +32,17 @@ function createFakeTerminalEnv({ webglShouldThrow = false } = {}) {
 			this.disposed = false;
 			this.parser = {
 				registerOscHandler: vi.fn(() => ({ dispose: vi.fn() }))
+			};
+			this._core = {
+				_isDisposed: false,
+				_renderService: {
+					setRenderer: vi.fn(),
+					handleResize: vi.fn(),
+					resize: vi.fn(),
+					handleFocus: vi.fn()
+				},
+				_createRenderer: vi.fn(() => ({ kind: 'dom-renderer' })),
+				viewport: { syncScrollArea: vi.fn() }
 			};
 			createdTerms.push(this);
 		}
@@ -112,6 +125,9 @@ function createFakeTerminalEnv({ webglShouldThrow = false } = {}) {
 		}
 		dispose() {
 			this.disposed = true;
+			if (webglDisposeShouldThrow) {
+				throw new TypeError("Cannot read properties of undefined (reading '_isDisposed')");
+			}
 		}
 	}
 
@@ -330,5 +346,122 @@ describe('vmManager.js lifecycle, WebGL fallback, KMS scaling, multi-tab & clean
 		expect(get(sessions).some((s) => s.id === tab2Id)).toBe(false);
 
 		manager.dispose();
+	});
+
+	it('recovers DOM renderer when WebglAddon.dispose() throws on runtime toggle or context loss', async () => {
+		const env = createFakeTerminalEnv({ webglDisposeShouldThrow: true });
+		env.mockCx.run.mockImplementation(
+			() => new Promise((resolve) => setTimeout(() => resolve({ status: 0 }), 5000))
+		);
+
+		const manager = createVmManager(
+			{
+				diskImageType: 'bytes',
+				diskImageUrl: '/local.ext2',
+				needsDisplay: false,
+				printIntro: false,
+				cmd: '/bin/bash',
+				args: [],
+				opts: { cwd: '/home/user', env: [] }
+			},
+			{ loadDeps: env.loadDeps }
+		);
+
+		await manager.boot({ consoleElement: consoleEl });
+		expect(get(activeRenderer)).toBe('webgl');
+
+		const term = env.createdTerms[0];
+		// Simulate missing .xterm-rows because WebglAddon threw during dispose()
+		settings.updateSetting('renderer', 'dom');
+		expect(get(activeRenderer)).toBe('dom');
+		expect(term._core._createRenderer).toHaveBeenCalledTimes(1);
+		expect(term._core._renderService.setRenderer).toHaveBeenCalledWith({ kind: 'dom-renderer' });
+		expect(term._core._renderService.handleResize).toHaveBeenCalledWith(80, 24);
+		expect(term._core.viewport.syncScrollArea).toHaveBeenCalledWith(true);
+
+		// Re-enable WebGL, then simulate context loss where dispose() also throws
+		settings.updateSetting('renderer', 'webgl');
+		expect(get(activeRenderer)).toBe('webgl');
+		env.triggerContextLoss();
+		expect(get(activeRenderer)).toBe('dom');
+		expect(term._core._createRenderer).toHaveBeenCalledTimes(2);
+
+		manager.dispose();
+	});
+
+	it('handles surrogate-safe shell editing, modified word jumps, unhandled CSI discard, and physical sticky modifiers', async () => {
+		const env = createFakeTerminalEnv({ webglShouldThrow: true });
+		env.mockCx.run.mockImplementation(async (cmd, args) => {
+			if (cmd === '/bin/bash') {
+				return await new Promise((resolve) => setTimeout(() => resolve({ status: 0 }), 5000));
+			}
+			return { status: 0 };
+		});
+
+		const manager = createVmManager(
+			{
+				diskImageType: 'bytes',
+				diskImageUrl: '/local.ext2',
+				needsDisplay: false,
+				printIntro: false,
+				cmd: '/bin/bash',
+				args: [],
+				opts: { cwd: '/home/user', env: ['HOME=/home/user', 'USER=user'] }
+			},
+			{ loadDeps: env.loadDeps }
+		);
+
+		await manager.boot({ consoleElement: consoleEl });
+
+		// Primary tab physical keyboard typing consumes sticky Ctrl & Alt
+		manager.setStickyModifiers({ ctrl: true, ctrlLocked: false, alt: false, altLocked: false });
+		env.createdTerms[0].emitData('c');
+		expect(env.cxReadSpy).toHaveBeenCalledWith(3); // \x03
+		expect(get(stickyModifiers)).toEqual(DEFAULT_STICKY_MODIFIERS);
+
+		// Locked Alt persists across physical keys
+		env.cxReadSpy.mockClear();
+		manager.setStickyModifiers({ ctrl: false, ctrlLocked: false, alt: true, altLocked: true });
+		env.createdTerms[0].emitData('x');
+		expect(env.cxReadSpy.mock.calls.map((c) => c[0])).toEqual([0x1b, 'x'.charCodeAt(0)]);
+		expect(get(stickyModifiers).altLocked).toBe(true);
+
+		// sendInputToActive does NOT double-apply sticky modifiers
+		env.cxReadSpy.mockClear();
+		manager.sendInputToActive('a');
+		expect(env.cxReadSpy.mock.calls.map((c) => c[0])).toEqual(['a'.charCodeAt(0)]);
+		manager.setStickyModifiers(DEFAULT_STICKY_MODIFIERS);
+
+		// Secondary shell tab: surrogate-safe editing + word jump + unhandled CSI discard
+		const tab2Id = manager.createShellTab({ title: 'emoji' });
+		expect(tab2Id).toBeTruthy();
+		const tab2Term = env.createdTerms[1];
+
+		// Type 'echo a😀', Backspace removes entire 😀 (not lone surrogate), then type 'b'
+		tab2Term.emitData('echo a😀');
+		tab2Term.emitData('\x7f');
+		// Unhandled CSI/SS3 sequences must not leak onto prompt
+		tab2Term.emitData('\x1b[15~\x1b[I\x1bOP');
+		// Word jump left (\x1b[1;5D), insert 'x', word jump right (\x1b[1;5C), type 'b', Enter
+		tab2Term.emitData('\x1b[1;5D');
+		tab2Term.emitData('x');
+		tab2Term.emitData('\x1b[1;5C');
+		tab2Term.emitData('b\r');
+
+		await new Promise((r) => setTimeout(r, 20));
+		expect(env.mockCx.run).toHaveBeenCalledWith(
+			'/bin/sh',
+			['-c', 'echo xab'],
+			expect.any(Object)
+		);
+
+		// Sticky Ctrl+C in secondary shell tab via physical keyboard
+		manager.setStickyModifiers({ ctrl: true, ctrlLocked: false, alt: false, altLocked: false });
+		tab2Term.emitData('abc');
+		tab2Term.emitData('c');
+		expect(get(stickyModifiers).ctrl).toBe(false);
+
+		manager.dispose();
+		expect(get(stickyModifiers)).toEqual(DEFAULT_STICKY_MODIFIERS);
 	});
 });

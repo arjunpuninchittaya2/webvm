@@ -154,9 +154,18 @@ const VALID_THEMES = new Set(Object.keys(TERMINAL_THEMES));
 const VALID_RENDERERS = new Set(['auto', 'webgl', 'dom']);
 
 function clampNumber(value, min, max, fallback) {
-	const num = Number(value);
-	if (!Number.isFinite(num)) return fallback;
-	return Math.min(max, Math.max(min, num));
+	if (typeof value === 'number') {
+		if (!Number.isFinite(value)) return fallback;
+		return Math.min(max, Math.max(min, value));
+	}
+	if (typeof value === 'string') {
+		const trimmed = value.trim();
+		if (trimmed.length === 0) return fallback;
+		const num = Number(trimmed);
+		if (!Number.isFinite(num)) return fallback;
+		return Math.min(max, Math.max(min, num));
+	}
+	return fallback;
 }
 
 export function sanitizeSettings(raw) {

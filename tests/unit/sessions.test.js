@@ -14,6 +14,9 @@ import {
 	vmState,
 	tailscaleIp,
 	toasts,
+	stickyModifiers,
+	DEFAULT_STICKY_MODIFIERS,
+	createSessionRecord,
 	upsertSession,
 	updateSession,
 	removeSession,
@@ -77,6 +80,7 @@ describe('sessions.js workstation state and toast stores', () => {
 		pageHidden.set(true);
 		vmState.set('ready');
 		tailscaleIp.set('100.64.0.1');
+		stickyModifiers.set({ ctrl: true, ctrlLocked: true, alt: true, altLocked: false });
 		bootState.set({ phase: 'ready', progress: 100, message: 'ok', ready: true, error: null });
 
 		resetSessionsStore();
@@ -88,5 +92,17 @@ describe('sessions.js workstation state and toast stores', () => {
 		expect(get(vmState)).toBe('booting');
 		expect(get(tailscaleIp)).toBeNull();
 		expect(get(bootState).ready).toBe(false);
+		expect(get(stickyModifiers)).toEqual(DEFAULT_STICKY_MODIFIERS);
+	});
+
+	it('guards createSessionRecord and updateSession against null or non-object inputs', () => {
+		const rec = createSessionRecord(null);
+		expect(rec.title).toBe('bash');
+		expect(rec.cwd).toBe('/home/user');
+
+		upsertSession({ id: 'tab-1', title: 'primary' });
+		expect(() => updateSession('tab-1', null)).not.toThrow();
+		expect(() => updateSession('tab-1', 'bad')).not.toThrow();
+		expect(get(sessions)[0].title).toBe('primary');
 	});
 });

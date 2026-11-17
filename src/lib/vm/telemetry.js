@@ -21,6 +21,10 @@ export function createTelemetryTracker(options = {}) {
 	let cpuHead = 0;
 	let cpuCount = 0;
 	let baselineActive = false;
+	let baselineTime = null;
+	let evictedStart = 0;
+	let evictedEnd = 0;
+	let evictedActiveMs = 0;
 
 	// Fixed-capacity ring buffer for disk block latency (O(1) running sum)
 	const latBuffer = new Float64Array(latencyCapacity);
@@ -49,7 +53,20 @@ export function createTelemetryTracker(options = {}) {
 	let timerId = null;
 
 	function expireCpuBefore(limitTime) {
+		if (evictedActiveMs > 0) {
+			if (limitTime >= evictedEnd) {
+				evictedActiveMs = 0;
+				evictedStart = 0;
+				evictedEnd = 0;
+			} else if (limitTime > evictedStart) {
+				const span = evictedEnd - evictedStart;
+				evictedActiveMs = span > 0 ? evictedActiveMs * ((evictedEnd - limitTime) / span) : 0;
+				evictedStart = limitTime;
+			}
+		}
+
 		while (cpuCount > 0 && cpuTimes[cpuHead] <= limitTime) {
+			baselineTime = cpuTimes[cpuHead];
 			baselineActive = cpuStates[cpuHead] === 1;
 			cpuHead = (cpuHead + 1) % cpuBufferCapacity;
 			cpuCount--;
@@ -60,8 +77,8 @@ export function createTelemetryTracker(options = {}) {
 		const limitTime = curTime - cpuWindowMs;
 		expireCpuBefore(limitTime);
 
-		let totalActiveTime = 0;
-		let lastTime = limitTime;
+		let totalActiveTime = evictedActiveMs;
+		let lastTime = baselineTime === null ? limitTime : Math.max(limitTime, baselineTime);
 		let wasActive = baselineActive;
 
 		for (let i = 0; i < cpuCount; i++) {
@@ -149,19 +166,47 @@ export function createTelemetryTracker(options = {}) {
 		if (disposed) return;
 		const t = now();
 		const active = state !== 'ready' && Boolean(state);
+		const activeBit = active ? 1 : 0;
 		curCpuActive = active;
 
-		expireCpuBefore(t - cpuWindowMs);
+		const limitTime = t - cpuWindowMs;
+		expireCpuBefore(limitTime);
+
+		if (cpuCount > 0) {
+			const lastIdx = (cpuHead + cpuCount - 1) % cpuBufferCapacity;
+			if (cpuStates[lastIdx] === activeBit) {
+				dirty = true;
+				ensureTimer();
+				return;
+			}
+		}
 
 		if (cpuCount === cpuBufferCapacity) {
-			baselineActive = cpuStates[cpuHead] === 1;
+			const evictedTime = cpuTimes[cpuHead];
+			const evictedActive = cpuStates[cpuHead] === 1;
+			if (baselineTime !== null && baselineActive && evictedTime > baselineTime) {
+				const segStart = Math.max(limitTime, baselineTime);
+				if (evictedTime > segStart) {
+					const segMs = evictedTime - segStart;
+					if (evictedActiveMs === 0) {
+						evictedStart = segStart;
+						evictedEnd = evictedTime;
+					} else {
+						evictedStart = Math.min(evictedStart, segStart);
+						evictedEnd = Math.max(evictedEnd, evictedTime);
+					}
+					evictedActiveMs += segMs;
+				}
+			}
+			baselineTime = evictedTime;
+			baselineActive = evictedActive;
 			cpuHead = (cpuHead + 1) % cpuBufferCapacity;
 			cpuCount--;
 		}
 
 		const idx = (cpuHead + cpuCount) % cpuBufferCapacity;
 		cpuTimes[idx] = t;
-		cpuStates[idx] = active ? 1 : 0;
+		cpuStates[idx] = activeBit;
 		cpuCount++;
 
 		dirty = true;
@@ -182,6 +227,13 @@ export function createTelemetryTracker(options = {}) {
 
 	function recordLatency(latency) {
 		if (disposed) return;
+		if (typeof latency === 'number') {
+			if (!Number.isFinite(latency) || latency < 0) return;
+		} else if (typeof latency === 'string') {
+			if (latency.trim().length === 0) return;
+		} else {
+			return;
+		}
 		const val = Number(latency);
 		if (!Number.isFinite(val) || val < 0) return;
 
@@ -197,7 +249,7 @@ export function createTelemetryTracker(options = {}) {
 			latCount++;
 		}
 
-		curLatency = Math.ceil(latSum / latCount);
+		curLatency = Math.max(0, Math.ceil(latSum / latCount)) || 0;
 		dirty = true;
 		ensureTimer();
 	}
@@ -233,6 +285,10 @@ export function createTelemetryTracker(options = {}) {
 		cpuHead = 0;
 		cpuCount = 0;
 		baselineActive = false;
+		baselineTime = null;
+		evictedStart = 0;
+		evictedEnd = 0;
+		evictedActiveMs = 0;
 		latHead = 0;
 		latCount = 0;
 		latSum = 0;

@@ -74,4 +74,17 @@ describe('settings.js persistent workstation preferences', () => {
 		expect(t1).not.toBe(t2);
 		expect(t1.background).toBe('#002b36');
 	});
+
+	it('falls back to defaults for null, boolean, array, and empty/whitespace numeric strings', () => {
+		for (const bad of [null, true, false, '', '   ', [], [12], {}]) {
+			const res = sanitizeSettings({ fontSize: bad, scrollback: bad, displayScale: bad });
+			expect(res.fontSize).toBe(DEFAULT_SETTINGS.fontSize);
+			expect(res.scrollback).toBe(DEFAULT_SETTINGS.scrollback);
+			expect(res.displayScale).toBe(DEFAULT_SETTINGS.displayScale);
+		}
+		const strNum = sanitizeSettings({ fontSize: ' 16 ', scrollback: '500', displayScale: '1.5' });
+		expect(strNum.fontSize).toBe(16);
+		expect(strNum.scrollback).toBe(500);
+		expect(strNum.displayScale).toBe(1.5);
+	});
 });

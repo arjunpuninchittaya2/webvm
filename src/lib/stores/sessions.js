@@ -24,26 +24,35 @@ export const bootState = writable({ ...DEFAULT_BOOT_STATE });
 export const activeRenderer = writable('dom');
 export const pageHidden = writable(false);
 export const vmState = writable('booting');
+export const DEFAULT_STICKY_MODIFIERS = Object.freeze({
+	ctrl: false,
+	ctrlLocked: false,
+	alt: false,
+	altLocked: false
+});
+
 export const tailscaleIp = writable(null);
 export const toasts = writable([]);
+export const stickyModifiers = writable({ ...DEFAULT_STICKY_MODIFIERS });
 
 let nextToastSeq = 1;
 const toastTimers = new Map();
 
 export function createSessionRecord(partial = {}) {
+	const safePartial = partial && typeof partial === 'object' ? partial : {};
 	return {
-		id: partial.id || `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-		title: partial.title || 'bash',
-		kind: partial.kind || 'shell',
-		status: partial.status || 'starting',
-		exitCode: partial.exitCode ?? null,
-		cmd: partial.cmd || '/bin/sh',
-		args: Array.isArray(partial.args) ? [...partial.args] : [],
-		cwd: partial.cwd || '/home/user',
-		env: Array.isArray(partial.env) ? [...partial.env] : [],
-		createdAt: partial.createdAt ?? Date.now(),
-		cols: partial.cols ?? 80,
-		rows: partial.rows ?? 24
+		id: safePartial.id || `session-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+		title: safePartial.title || 'bash',
+		kind: safePartial.kind || 'shell',
+		status: safePartial.status || 'starting',
+		exitCode: safePartial.exitCode ?? null,
+		cmd: safePartial.cmd || '/bin/sh',
+		args: Array.isArray(safePartial.args) ? [...safePartial.args] : [],
+		cwd: safePartial.cwd || '/home/user',
+		env: Array.isArray(safePartial.env) ? [...safePartial.env] : [],
+		createdAt: safePartial.createdAt ?? Date.now(),
+		cols: safePartial.cols ?? 80,
+		rows: safePartial.rows ?? 24
 	};
 }
 
@@ -68,6 +77,7 @@ export function upsertSession(record) {
 }
 
 export function updateSession(id, patch) {
+	if (!id || !patch || typeof patch !== 'object') return;
 	sessions.update((list) => {
 		let changed = false;
 		const next = list.map((s) => {
@@ -142,4 +152,5 @@ export function resetSessionsStore() {
 	vmState.set('booting');
 	tailscaleIp.set(null);
 	toasts.set([]);
+	stickyModifiers.set({ ...DEFAULT_STICKY_MODIFIERS });
 }

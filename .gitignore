@@ -12,3 +12,4 @@ nginx_user.pid
 test-results/
 playwright-report/
 coverage/
+*.timestamp-*

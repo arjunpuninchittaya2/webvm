@@ -12,6 +12,40 @@
 	const dispatch = createEventDispatcher();
 	const themeEntries = Object.values(TERMINAL_THEMES);
 
+	let fontSizeDraft = String($settings.fontSize);
+	let scrollbackDraft = String($settings.scrollback);
+	let fontSizeFocused = false;
+	let scrollbackFocused = false;
+
+	$: if (!fontSizeFocused) {
+		fontSizeDraft = String($settings.fontSize);
+	}
+	$: if (!scrollbackFocused) {
+		scrollbackDraft = String($settings.scrollback);
+	}
+
+	function commitFontSize() {
+		const trimmed = String(fontSizeDraft ?? '').trim();
+		const num = Number(trimmed);
+		if (trimmed.length === 0 || !Number.isFinite(num)) {
+			fontSizeDraft = String($settings.fontSize);
+			return;
+		}
+		settings.updateSetting('fontSize', num);
+		fontSizeDraft = String($settings.fontSize);
+	}
+
+	function commitScrollback() {
+		const trimmed = String(scrollbackDraft ?? '').trim();
+		const num = Number(trimmed);
+		if (trimmed.length === 0 || !Number.isFinite(num)) {
+			scrollbackDraft = String($settings.scrollback);
+			return;
+		}
+		settings.updateSetting('scrollback', num);
+		scrollbackDraft = String($settings.scrollback);
+	}
+
 	function close() {
 		dispatch('close');
 	}
@@ -88,8 +122,15 @@
 						type="number"
 						min="10"
 						max="28"
-						value={$settings.fontSize}
-						on:change={(e) => settings.updateSetting('fontSize', Number(e.currentTarget.value))}
+						bind:value={fontSizeDraft}
+						on:focus={() => {
+							fontSizeFocused = true;
+						}}
+						on:blur={() => {
+							fontSizeFocused = false;
+							commitFontSize();
+						}}
+						on:change={commitFontSize}
 						class="px-2.5 py-1.5 rounded bg-neutral-800 border border-neutral-700 text-gray-100"
 					/>
 				</div>
@@ -118,8 +159,15 @@
 						min="200"
 						max="20000"
 						step="100"
-						value={$settings.scrollback}
-						on:change={(e) => settings.updateSetting('scrollback', Number(e.currentTarget.value))}
+						bind:value={scrollbackDraft}
+						on:focus={() => {
+							scrollbackFocused = true;
+						}}
+						on:blur={() => {
+							scrollbackFocused = false;
+							commitScrollback();
+						}}
+						on:change={commitScrollback}
 						class="px-2.5 py-1.5 rounded bg-neutral-800 border border-neutral-700 text-gray-100"
 					/>
 				</div>

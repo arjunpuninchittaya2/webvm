@@ -10,13 +10,13 @@
 
 {#if !$bootState.ready && ($bootState.error ? dismissedError !== $bootState.error : $bootState.phase !== 'idle')}
 	<div
-		class="pointer-events-none fixed bottom-9 left-16 z-[25] max-w-md"
+		class="pointer-events-none absolute top-2 right-3 z-[25] w-[calc(100%-1.5rem)] max-w-xs sm:max-w-sm"
 		data-testid="boot-progress-overlay"
 	>
 		<div
-			class="pointer-events-auto flex flex-col gap-1.5 px-3 py-2 rounded-md border shadow-lg text-xs {$bootState.error
-				? 'bg-red-950/90 border-red-800 text-red-100'
-				: 'bg-neutral-900/90 border-neutral-700 text-gray-200'}"
+			class="{$bootState.error
+				? 'pointer-events-auto bg-red-950/90 border-red-800 text-red-100'
+				: 'pointer-events-none bg-neutral-900/90 border-neutral-700 text-gray-200'} flex flex-col gap-1.5 px-3 py-2 rounded-md border shadow-lg text-xs"
 			role="status"
 			aria-live="polite"
 		>
@@ -28,7 +28,7 @@
 					<button
 						type="button"
 						aria-label="Dismiss boot notice"
-						class="px-1.5 py-0.5 rounded bg-red-900 hover:bg-red-800 text-[11px]"
+						class="pointer-events-auto px-1.5 py-0.5 rounded bg-red-900 hover:bg-red-800 text-[11px]"
 						on:click={() => {
 							dismissedError = $bootState.error;
 						}}

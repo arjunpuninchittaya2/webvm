@@ -14,6 +14,8 @@ import {
 	activeRenderer,
 	pageHidden,
 	vmState,
+	stickyModifiers,
+	DEFAULT_STICKY_MODIFIERS,
 	addToast,
 	upsertSession,
 	updateSession,
@@ -22,7 +24,13 @@ import {
 	resetSessionsStore
 } from '$lib/stores/sessions.js';
 import { createTelemetryTracker } from './telemetry.js';
-import { createTerminalBatcher, createInputWriter, registerOsc52Handler } from './terminalIO.js';
+import {
+	createTerminalBatcher,
+	createInputWriter,
+	registerOsc52Handler,
+	applyTerminalModifiers,
+	getDisplayWidth
+} from './terminalIO.js';
 
 const SEARCH_DECORATIONS = {
 	matchBackground: '#665c00',
@@ -248,24 +256,64 @@ export function createVmManager(configObj, options = {}) {
 		});
 	}
 
+	function ensureDomRenderer(tab) {
+		if (!tab?.term) return;
+		const core = tab.term._core;
+		const renderService = core?._renderService;
+		if (!core || core._isDisposed || !renderService || typeof core._createRenderer !== 'function') {
+			return;
+		}
+		if (tab.hostEl?.querySelector?.('.xterm-rows')) {
+			return;
+		}
+		try {
+			const domRenderer = core._createRenderer();
+			renderService.setRenderer(domRenderer);
+			renderService.handleResize?.(tab.term.cols, tab.term.rows);
+			renderService.resize?.(tab.term.cols, tab.term.rows);
+			const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+			if (activeEl && tab.hostEl?.contains?.(activeEl)) {
+				renderService.handleFocus?.();
+			}
+			core.viewport?.syncScrollArea?.(true);
+		} catch {
+			// Ignore renderer recovery failure
+		}
+	}
+
+	function disposeWebglAddon(tab) {
+		if (!tab) return;
+		if (tab.webglAddon) {
+			try {
+				tab.webglAddon.dispose();
+			} catch {
+				// @xterm/addon-webgl@0.19.0 throws on @xterm/xterm@5.5.0 before restoring DOM renderer
+			}
+			tab.webglAddon = null;
+		}
+		ensureDomRenderer(tab);
+	}
+
 	function syncWebglForActiveTab() {
 		if (disposed) return;
 		const activeTab = getActiveTab();
 		const wantWebgl = currentSettings.renderer !== 'dom' && !webglBlocked && Boolean(WebglAddonCtor);
+		let recoveredDom = false;
 
 		for (const [id, tab] of tabs.entries()) {
 			const shouldKeep = wantWebgl && activeTab && id === activeTab.id;
 			if (!shouldKeep && tab.webglAddon) {
-				try {
-					tab.webglAddon.dispose();
-				} catch {
-					// Ignore disposal error
+				disposeWebglAddon(tab);
+				if (activeTab && id === activeTab.id) {
+					recoveredDom = true;
 				}
-				tab.webglAddon = null;
 			}
 		}
 
 		if (!activeTab || !wantWebgl) {
+			if (activeTab && !recoveredDom) {
+				ensureDomRenderer(activeTab);
+			}
 			activeRenderer.set('dom');
 			return;
 		}
@@ -286,12 +334,10 @@ export function createVmManager(configObj, options = {}) {
 		try {
 			const addon = new WebglAddonCtor();
 			addon.onContextLoss(() => {
-				try {
-					addon.dispose();
-				} catch {
-					// Ignore
+				if (!activeTab.webglAddon) {
+					activeTab.webglAddon = addon;
 				}
-				activeTab.webglAddon = null;
+				disposeWebglAddon(activeTab);
 				webglBlocked = true;
 				activeRenderer.set('dom');
 				addToast({
@@ -304,6 +350,7 @@ export function createVmManager(configObj, options = {}) {
 			activeRenderer.set('webgl');
 		} catch {
 			webglBlocked = true;
+			ensureDomRenderer(activeTab);
 			activeRenderer.set('dom');
 		}
 	}
@@ -438,10 +485,38 @@ export function createVmManager(configObj, options = {}) {
 		return task;
 	}
 
+	function setStickyModifiers(next) {
+		const src = next && typeof next === 'object' ? next : {};
+		stickyModifiers.set({
+			ctrl: Boolean(src.ctrl),
+			ctrlLocked: Boolean(src.ctrlLocked),
+			alt: Boolean(src.alt),
+			altLocked: Boolean(src.altLocked)
+		});
+	}
+
+	function consumeStickyModifiers(data) {
+		const mod = get(stickyModifiers);
+		if (!mod.ctrl && !mod.alt) return data;
+		const { output, consumedCtrl, consumedAlt } = applyTerminalModifiers(data, {
+			ctrl: mod.ctrl,
+			alt: mod.alt
+		});
+		if ((consumedCtrl && !mod.ctrlLocked) || (consumedAlt && !mod.altLocked)) {
+			stickyModifiers.set({
+				ctrl: consumedCtrl && !mod.ctrlLocked ? false : mod.ctrl,
+				ctrlLocked: mod.ctrlLocked,
+				alt: consumedAlt && !mod.altLocked ? false : mod.alt,
+				altLocked: mod.altLocked
+			});
+		}
+		return output;
+	}
+
 	function attachShellController(tab) {
 		const home = getEnvValue(tab.env, 'HOME', '/home/user');
 		const user = getEnvValue(tab.env, 'USER', 'user');
-		let line = '';
+		let chars = [];
 		let cursor = 0;
 		const history = [];
 		let historyIdx = 0;
@@ -452,6 +527,14 @@ export function createVmManager(configObj, options = {}) {
 			tab.batcher.writeText(str);
 		}
 
+		function widthBetween(start, end) {
+			let w = 0;
+			for (let idx = start; idx < end; idx++) {
+				w += getDisplayWidth(chars[idx]);
+			}
+			return w;
+		}
+
 		function renderPrompt(suffix = '') {
 			if (exited || disposed) return;
 			const shortCwd = tab.cwd === home ? '~' : tab.cwd;
@@ -459,21 +542,19 @@ export function createVmManager(configObj, options = {}) {
 			writeRaw(`${prefix}\x1b[32m${user}@webvm\x1b[0m:\x1b[34m${shortCwd}\x1b[0m$ `);
 		}
 
-		function redrawLine(prevLen) {
-			const moveStart = '\r';
+		function redrawLine() {
 			const shortCwd = tab.cwd === home ? '~' : tab.cwd;
 			const promptText = `\x1b[32m${user}@webvm\x1b[0m:\x1b[34m${shortCwd}\x1b[0m$ `;
-			const clearTail = prevLen > line.length ? ' '.repeat(prevLen - line.length) : '';
-			const moveBack = line.length - cursor + clearTail.length;
-			const backSeq = moveBack > 0 ? `\x1b[${moveBack}D` : '';
-			writeRaw(`${moveStart}${promptText}${line}${clearTail}${backSeq}`);
+			const fullLine = chars.join('');
+			const tailWidth = widthBetween(cursor, chars.length);
+			const backSeq = tailWidth > 0 ? `\x1b[${tailWidth}D` : '';
+			writeRaw(`\r${promptText}${fullLine}\x1b[K${backSeq}`);
 		}
 
 		function replaceLine(nextLine) {
-			const prevLen = line.length;
-			line = nextLine;
-			cursor = line.length;
-			redrawLine(prevLen);
+			chars = Array.from(nextLine || '');
+			cursor = chars.length;
+			redrawLine();
 		}
 
 		async function executeLine(rawCmd) {
@@ -621,7 +702,7 @@ export function createVmManager(configObj, options = {}) {
 		}
 
 		function handleData(data) {
-			if (disposed || exited) return;
+			if (disposed || exited || typeof data !== 'string' || data.length === 0) return;
 			if (busy) {
 				if (data === '\x03') {
 					writeRaw('^C\r\n');
@@ -650,70 +731,124 @@ export function createVmManager(configObj, options = {}) {
 				if (data.startsWith('\x1b[D', i)) {
 					if (cursor > 0) {
 						cursor--;
-						writeRaw('\x1b[D');
+						const w = getDisplayWidth(chars[cursor]);
+						if (w > 0) writeRaw(`\x1b[${w}D`);
 					}
 					i += 3;
 					continue;
 				}
 				if (data.startsWith('\x1b[C', i)) {
-					if (cursor < line.length) {
+					if (cursor < chars.length) {
+						const w = getDisplayWidth(chars[cursor]);
 						cursor++;
-						writeRaw('\x1b[C');
+						if (w > 0) writeRaw(`\x1b[${w}C`);
 					}
 					i += 3;
 					continue;
 				}
+				if (
+					data.startsWith('\x1b[1;5D', i) ||
+					data.startsWith('\x1b[1;3D', i) ||
+					data.startsWith('\x1bb', i)
+				) {
+					const prevCursor = cursor;
+					while (cursor > 0 && /\s/.test(chars[cursor - 1])) cursor--;
+					while (cursor > 0 && !/\s/.test(chars[cursor - 1])) cursor--;
+					const w = widthBetween(cursor, prevCursor);
+					if (w > 0) writeRaw(`\x1b[${w}D`);
+					i += data.startsWith('\x1bb', i) ? 2 : 6;
+					continue;
+				}
+				if (
+					data.startsWith('\x1b[1;5C', i) ||
+					data.startsWith('\x1b[1;3C', i) ||
+					data.startsWith('\x1bf', i)
+				) {
+					const prevCursor = cursor;
+					while (cursor < chars.length && /\s/.test(chars[cursor])) cursor++;
+					while (cursor < chars.length && !/\s/.test(chars[cursor])) cursor++;
+					const w = widthBetween(prevCursor, cursor);
+					if (w > 0) writeRaw(`\x1b[${w}C`);
+					i += data.startsWith('\x1bf', i) ? 2 : 6;
+					continue;
+				}
 				if (data.startsWith('\x1b[H', i) || data.startsWith('\x1b[1~', i)) {
 					if (cursor > 0) {
-						writeRaw(`\x1b[${cursor}D`);
+						const w = widthBetween(0, cursor);
 						cursor = 0;
+						if (w > 0) writeRaw(`\x1b[${w}D`);
 					}
 					i += data.startsWith('\x1b[H', i) ? 3 : 4;
 					continue;
 				}
 				if (data.startsWith('\x1b[F', i) || data.startsWith('\x1b[4~', i)) {
-					if (cursor < line.length) {
-						writeRaw(`\x1b[${line.length - cursor}C`);
-						cursor = line.length;
+					if (cursor < chars.length) {
+						const w = widthBetween(cursor, chars.length);
+						cursor = chars.length;
+						if (w > 0) writeRaw(`\x1b[${w}C`);
 					}
 					i += data.startsWith('\x1b[F', i) ? 3 : 4;
 					continue;
 				}
 				if (data.startsWith('\x1b[3~', i)) {
-					if (cursor < line.length) {
-						const prevLen = line.length;
-						line = line.slice(0, cursor) + line.slice(cursor + 1);
-						redrawLine(prevLen);
+					if (cursor < chars.length) {
+						chars.splice(cursor, 1);
+						redrawLine();
 					}
 					i += 4;
 					continue;
 				}
+				if (data[i] === '\x1b') {
+					const rest = data.slice(i);
+					const csiMatch = rest.match(/^\x1b\[[0-?]*[ -/]*[@-~]/);
+					if (csiMatch) {
+						i += csiMatch[0].length;
+						continue;
+					}
+					const ss3Match = rest.match(/^\x1bO[ -~]/);
+					if (ss3Match) {
+						i += ss3Match[0].length;
+						continue;
+					}
+					if (i + 1 < data.length) {
+						const nextCp = data.codePointAt(i + 1);
+						i += 1 + (nextCp !== undefined && nextCp > 0xffff ? 2 : 1);
+					} else {
+						i += 1;
+					}
+					continue;
+				}
 
-				const ch = data[i];
-				const code = ch.charCodeAt(0);
-				i++;
+				const cp = data.codePointAt(i);
+				const ch = String.fromCodePoint(cp);
+				i += ch.length;
 
 				if (ch === '\r' || ch === '\n') {
-					const toRun = line;
-					line = '';
+					const toRun = chars.join('');
+					chars = [];
 					cursor = 0;
 					writeRaw('\r\n');
 					void executeLine(toRun);
 					if (ch === '\r' && data[i] === '\n') i++;
 				} else if (ch === '\x7f' || ch === '\b') {
 					if (cursor > 0) {
-						const prevLen = line.length;
-						line = line.slice(0, cursor - 1) + line.slice(cursor);
+						const removed = chars[cursor - 1];
+						const w = getDisplayWidth(removed);
+						chars.splice(cursor - 1, 1);
 						cursor--;
-						redrawLine(prevLen);
+						if (cursor === chars.length && w > 0) {
+							writeRaw(`\x1b[${w}D\x1b[K`);
+						} else {
+							redrawLine();
+						}
 					}
 				} else if (ch === '\x03') {
-					line = '';
+					chars = [];
 					cursor = 0;
 					writeRaw('^C\r\n');
 					renderPrompt();
 				} else if (ch === '\x04') {
-					if (line.length === 0) {
+					if (chars.length === 0) {
 						exited = true;
 						updateSession(tab.id, { status: 'exited', exitCode: 0 });
 						writeRaw('exit\r\n[Session exited with code 0]\r\n');
@@ -721,37 +856,46 @@ export function createVmManager(configObj, options = {}) {
 					}
 				} else if (ch === '\x0c') {
 					tab.term.clear();
-					redrawLine(line.length);
+					redrawLine();
 				} else if (ch === '\x15') {
-					const prevLen = line.length;
-					line = '';
+					chars = [];
 					cursor = 0;
-					redrawLine(prevLen);
+					redrawLine();
 				} else if (ch === '\x01') {
 					if (cursor > 0) {
-						writeRaw(`\x1b[${cursor}D`);
+						const w = widthBetween(0, cursor);
 						cursor = 0;
+						if (w > 0) writeRaw(`\x1b[${w}D`);
 					}
 				} else if (ch === '\x05') {
-					if (cursor < line.length) {
-						writeRaw(`\x1b[${line.length - cursor}C`);
-						cursor = line.length;
+					if (cursor < chars.length) {
+						const w = widthBetween(cursor, chars.length);
+						cursor = chars.length;
+						if (w > 0) writeRaw(`\x1b[${w}C`);
 					}
-				} else if (code >= 0x20 || ch === '\t') {
-					const insert = ch === '\t' ? '  ' : ch;
-					const prevLen = line.length;
-					line = line.slice(0, cursor) + insert + line.slice(cursor);
-					cursor += insert.length;
-					if (cursor === line.length) {
-						writeRaw(insert);
+				} else if (cp >= 0x20 || ch === '\t') {
+					if (ch === '\t') {
+						chars.splice(cursor, 0, ' ', ' ');
+						cursor += 2;
+						if (cursor === chars.length) {
+							writeRaw('  ');
+						} else {
+							redrawLine();
+						}
 					} else {
-						redrawLine(prevLen);
+						chars.splice(cursor, 0, ch);
+						cursor++;
+						if (cursor === chars.length) {
+							writeRaw(ch);
+						} else {
+							redrawLine();
+						}
 					}
 				}
 			}
 		}
 
-		const dataDisposable = tab.term.onData(handleData);
+		const dataDisposable = tab.term.onData((data) => handleData(consumeStickyModifiers(data)));
 		tab.disposables.push(dataDisposable);
 
 		writeRaw('WebVM secondary shell session (type "help" for built-ins)\r\n');
@@ -761,7 +905,7 @@ export function createVmManager(configObj, options = {}) {
 			reset() {
 				exited = false;
 				busy = false;
-				line = '';
+				chars = [];
 				cursor = 0;
 				updateSession(tab.id, { status: 'running', exitCode: null });
 				tab.term.clear();
@@ -869,7 +1013,7 @@ export function createVmManager(configObj, options = {}) {
 
 		if (kind === 'primary') {
 			disposables.push(
-				term.onData((data) => inputWriter.write(data)),
+				term.onData((data) => inputWriter.write(consumeStickyModifiers(data))),
 				term.onBinary((data) => inputWriter.sendBinary(data)),
 				term.onResize(({ cols, rows }) => syncPrimaryPtySize(cols, rows))
 			);
@@ -1565,6 +1709,7 @@ export function createVmManager(configObj, options = {}) {
 		}
 		tabs.clear();
 		searchListeners.clear();
+		stickyModifiers.set({ ...DEFAULT_STICKY_MODIFIERS });
 	}
 
 	return {
@@ -1581,6 +1726,7 @@ export function createVmManager(configObj, options = {}) {
 		toggleDisplayPause: () => displayPaused.update((v) => !v),
 		applyDisplayScale,
 		scheduleResize,
+		setStickyModifiers,
 		sendInputToActive,
 		search,
 		clearSearch,

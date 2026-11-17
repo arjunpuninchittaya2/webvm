@@ -57,13 +57,20 @@
 			</span>
 		{/if}
 
-		{#if $settings.powerSaver || $pageHidden}
-			<span
-				class="px-1.5 py-0.2 rounded bg-amber-900/60 text-amber-200 border border-amber-700/60"
-				data-testid="status-power-saver"
-			>
-				Power Saver
-			</span>
-		{/if}
+		<button
+			type="button"
+			data-testid="status-power-saver"
+			aria-pressed={$settings.powerSaver}
+			aria-label="Toggle power saver mode"
+			title={$settings.powerSaver
+				? 'Power Saver (ECO) enabled — click to disable'
+				: 'Enable Power Saver (ECO) mode'}
+			class="px-1.5 py-0.5 rounded border font-mono text-[10px] leading-tight transition-colors {$settings.powerSaver || $pageHidden
+				? 'bg-amber-900/60 text-amber-200 border-amber-600/80'
+				: 'bg-neutral-800 hover:bg-neutral-700 text-gray-300 border-neutral-700'}"
+			on:click={() => settings.updateSetting('powerSaver', !$settings.powerSaver)}
+		>
+			ECO{$settings.powerSaver ? ' ON' : ''}
+		</button>
 	</div>
 </footer>

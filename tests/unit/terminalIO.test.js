@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
 	createTerminalBatcher,
 	createInputWriter,
-	registerOsc52Handler
+	registerOsc52Handler,
+	applyTerminalModifiers,
+	getCodePointDisplayWidth,
+	getDisplayWidth
 } from '../../src/lib/vm/terminalIO.js';
 
 describe('terminalIO.js batching, UTF-8 chunked input, and OSC-52', () => {
@@ -47,6 +50,61 @@ describe('terminalIO.js batching, UTF-8 chunked input, and OSC-52', () => {
 
 		batcher.dispose();
 		vi.unstubAllGlobals();
+	});
+
+	it('copies ArrayBuffer/SharedArrayBuffer defensively, rejects non-iterables, and handles re-entrant setTerminal(null)', () => {
+		const writes = [];
+		let batcher;
+		const term1 = {
+			write: vi.fn((data) => {
+				writes.push(new Uint8Array(data));
+				// Re-entrantly clear terminal during flushAll loop
+				batcher.setTerminal(null);
+			})
+		};
+		const term2 = { write: vi.fn((data) => writes.push(new Uint8Array(data))) };
+
+		batcher = createTerminalBatcher(term1, {
+			maxFlushBytes: 4,
+			highWaterBytes: 100,
+			isHidden: () => true
+		});
+
+		// Reject non-iterable numbers/objects without queuing
+		batcher.write(123);
+		batcher.write({});
+		expect(batcher.getQueuedBytes()).toBe(0);
+
+		// Defensive ArrayBuffer copy
+		const ab = new ArrayBuffer(4);
+		const abView = new Uint8Array(ab);
+		abView.set([65, 66, 67, 68]);
+		batcher.write(ab);
+		abView[0] = 90;
+
+		// Defensive SharedArrayBuffer copy if available
+		if (typeof SharedArrayBuffer !== 'undefined') {
+			const sab = new SharedArrayBuffer(4);
+			const sabView = new Uint8Array(sab);
+			sabView.set([69, 70, 71, 72]);
+			batcher.write(sab);
+			sabView[0] = 90;
+		}
+
+		// flushAll stops cleanly when term1 re-entrantly calls setTerminal(null)
+		expect(() => batcher.flushAll()).not.toThrow();
+		expect(Array.from(writes[0])).toEqual([65, 66, 67, 68]);
+
+		if (typeof SharedArrayBuffer !== 'undefined') {
+			expect(batcher.getQueuedBytes()).toBe(4);
+			// Re-attaching terminal schedules flush of remaining queued bytes
+			batcher.setTerminal(term2);
+			vi.advanceTimersByTime(50);
+			expect(term2.write).toHaveBeenCalledTimes(1);
+			expect(Array.from(writes[1])).toEqual([69, 70, 71, 72]);
+		}
+
+		batcher.dispose();
 	});
 
 	it('triggers immediate bounded-slice flush at highWaterBytes backpressure and bulk printMessage', () => {
@@ -134,5 +192,55 @@ describe('terminalIO.js batching, UTF-8 chunked input, and OSC-52', () => {
 		expect(registeredCallback('c;!!!not-base64!!!')).toBe(false);
 
 		disp.dispose();
+	});
+
+	it('applies Ctrl/Alt terminal modifiers accurately and ignores focus events and pastes', () => {
+		expect(applyTerminalModifiers('c', { ctrl: true, alt: false })).toEqual({
+			output: '\x03',
+			consumedCtrl: true,
+			consumedAlt: false
+		});
+		expect(applyTerminalModifiers(' ', { ctrl: true, alt: false }).output).toBe('\x00');
+		expect(applyTerminalModifiers('?', { ctrl: true, alt: false }).output).toBe('\x7f');
+		expect(applyTerminalModifiers('/', { ctrl: true, alt: false }).output).toBe('\x1f');
+		expect(applyTerminalModifiers('x', { ctrl: false, alt: true })).toEqual({
+			output: '\x1bx',
+			consumedCtrl: false,
+			consumedAlt: true
+		});
+		expect(applyTerminalModifiers('x', { ctrl: true, alt: true })).toEqual({
+			output: '\x1b\x18',
+			consumedCtrl: true,
+			consumedAlt: true
+		});
+		// CSI arrows/Home/End, SS3 F1-F4, CSI tilde
+		expect(applyTerminalModifiers('\x1b[D', { ctrl: true, alt: false }).output).toBe('\x1b[1;5D');
+		expect(applyTerminalModifiers('\x1b[C', { ctrl: false, alt: true }).output).toBe('\x1b[1;3C');
+		expect(applyTerminalModifiers('\x1bOP', { ctrl: true, alt: true }).output).toBe('\x1b[1;7P');
+		expect(applyTerminalModifiers('\x1b[5~', { ctrl: true, alt: false }).output).toBe('\x1b[5;5~');
+		// Focus events & multi-char pastes ignored
+		expect(applyTerminalModifiers('\x1b[I', { ctrl: true, alt: true })).toEqual({
+			output: '\x1b[I',
+			consumedCtrl: false,
+			consumedAlt: false
+		});
+		expect(applyTerminalModifiers('\x1b[O', { ctrl: true, alt: true })).toEqual({
+			output: '\x1b[O',
+			consumedCtrl: false,
+			consumedAlt: false
+		});
+		expect(applyTerminalModifiers('echo hi', { ctrl: true, alt: true })).toEqual({
+			output: 'echo hi',
+			consumedCtrl: false,
+			consumedAlt: false
+		});
+	});
+
+	it('computes Unicode display widths for ASCII, wide emojis/CJK, and combining marks', () => {
+		expect(getCodePointDisplayWidth('a'.codePointAt(0))).toBe(1);
+		expect(getCodePointDisplayWidth('😀'.codePointAt(0))).toBe(2);
+		expect(getCodePointDisplayWidth('漢'.codePointAt(0))).toBe(2);
+		expect(getCodePointDisplayWidth(0x0301)).toBe(0);
+		expect(getDisplayWidth('a😀漢\u0301')).toBe(5);
 	});
 });

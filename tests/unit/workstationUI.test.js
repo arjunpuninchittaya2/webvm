@@ -102,13 +102,15 @@ describe('M2 workstation UI components & accessibility', () => {
 		bar.$destroy();
 	});
 
-	it('VirtualKeyBar prevents mousedown focus steal and applies sticky Ctrl modifier', async () => {
+	it('VirtualKeyBar prevents mousedown focus steal, applies sticky/locked Ctrl & Alt modifiers, and provides mod input', async () => {
 		const sent = [];
+		const modChanges = [];
 		const vkeys = new VirtualKeyBar({
 			target: container,
 			props: { visible: true, activeVt: 1 }
 		});
 		vkeys.$on('sendKey', (e) => sent.push(e.detail));
+		vkeys.$on('modifierChange', (e) => modChanges.push(e.detail));
 		await tick();
 
 		const escBtn = container.querySelector('[data-testid="vkey-esc"]');
@@ -117,15 +119,114 @@ describe('M2 workstation UI components & accessibility', () => {
 		expect(mousedownEv.defaultPrevented).toBe(true);
 		escBtn.click();
 
+		// Sticky Ctrl + Arrow Left -> \x1b[1;5D and auto-releases
+		const ctrlBtn = container.querySelector('[data-testid="vkey-ctrl"]');
+		ctrlBtn.click();
+		await tick();
+		expect(ctrlBtn.getAttribute('aria-pressed')).toBe('true');
+
+		const modInput = container.querySelector('[data-testid="vkey-mod-input"]');
+		expect(modInput).not.toBeNull();
+		// Clicking Ctrl did not focus modInput
+		expect(document.activeElement).not.toBe(modInput);
+
+		container.querySelector('button[aria-label="Arrow Left"]').click();
+		await tick();
+		expect(ctrlBtn.getAttribute('aria-pressed')).toBe('false');
+
+		// Sticky Alt + vkey-mod-input 'x' -> \x1bx and auto-releases
+		const altBtn = container.querySelector('[data-testid="vkey-alt"]');
+		altBtn.click();
+		await tick();
+		const altModInput = container.querySelector('[data-testid="vkey-mod-input"]');
+		altModInput.value = 'x';
+		altModInput.dispatchEvent(new Event('input'));
+		await tick();
+		expect(altBtn.getAttribute('aria-pressed')).toBe('false');
+
+		// Double-click Ctrl locks it across multiple keys (e.g. F1 -> \x1b[1;5P), click unlocks
+		ctrlBtn.dispatchEvent(new MouseEvent('dblclick'));
+		await tick();
+		expect(ctrlBtn.getAttribute('data-locked')).toBe('true');
+
 		container.querySelector('[data-testid="vkey-fn-toggle"]').click();
 		await tick();
 		expect(container.querySelector('[data-testid="virtual-fn-row"]')).not.toBeNull();
 
-		expect(sent).toEqual(['\x1b']);
+		const f1Btn = Array.from(container.querySelectorAll('[data-testid="virtual-fn-row"] button')).find(
+			(b) => b.textContent.trim() === 'F1'
+		);
+		f1Btn.click();
+		await tick();
+		// Still locked after F1
+		expect(ctrlBtn.getAttribute('data-locked')).toBe('true');
+
+		// Click when locked unlocks both ctrl and ctrlLocked
+		ctrlBtn.click();
+		await tick();
+		expect(ctrlBtn.getAttribute('data-locked')).toBe('false');
+		expect(ctrlBtn.getAttribute('aria-pressed')).toBe('false');
+
+		expect(sent).toEqual(['\x1b', '\x1b[1;5D', '\x1bx', '\x1b[1;5P']);
+		expect(modChanges.length).toBeGreaterThanOrEqual(4);
 		vkeys.$destroy();
 	});
 
-	it('TerminalToolbar, TerminalSearchBar, SettingsModal, StatusBar, Toasts & BootOverlay render and persist', async () => {
+	it('SideBar unpinned click promotes hover to click, stays open on mouseleave, and closes on second click, Escape, or outside pointerdown', async () => {
+		vi.useFakeTimers();
+		const sidebar = new SideBar({
+			target: container,
+			props: { sideBarPinned: false, handleTool: vi.fn() }
+		});
+		await tick();
+
+		const cpuBtn = container.querySelector('button[aria-label="CPU"]');
+		const aside = container.querySelector('aside[aria-label="Sidebar panel"]');
+		expect(aside.classList.contains('hidden')).toBe(true);
+
+		// Hover opens panel
+		cpuBtn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+		await tick();
+		expect(aside.classList.contains('hidden')).toBe(false);
+
+		// Clicking hovered icon promotes to 'click' and keeps it open
+		cpuBtn.click();
+		await tick();
+		expect(aside.classList.contains('hidden')).toBe(false);
+
+		// Leaving sidebar does NOT close click-opened panel
+		const rootDiv = container.firstElementChild;
+		rootDiv.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }));
+		vi.advanceTimersByTime(500);
+		await tick();
+		expect(aside.classList.contains('hidden')).toBe(false);
+
+		// Clicking same icon again closes it
+		cpuBtn.click();
+		await tick();
+		expect(aside.classList.contains('hidden')).toBe(true);
+
+		// Clicking icon opens again; Escape closes it
+		cpuBtn.click();
+		await tick();
+		expect(aside.classList.contains('hidden')).toBe(false);
+		window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		await tick();
+		expect(aside.classList.contains('hidden')).toBe(true);
+
+		// Clicking icon opens again; outside pointerdown closes it
+		cpuBtn.click();
+		await tick();
+		expect(aside.classList.contains('hidden')).toBe(false);
+		window.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+		await tick();
+		expect(aside.classList.contains('hidden')).toBe(true);
+
+		sidebar.$destroy();
+		vi.useRealTimers();
+	});
+
+	it('TerminalToolbar, TerminalSearchBar, SettingsModal drafts, StatusBar ECO toggle, Toasts & BootOverlay render and persist', async () => {
 		const toolbar = new TerminalToolbar({
 			target: container,
 			props: { vtAvailable: true, activeVt: 1, displayScale: 1 }
@@ -153,13 +254,37 @@ describe('M2 workstation UI components & accessibility', () => {
 		expect(container.querySelector('[data-testid="settings-modal"]').getAttribute('aria-modal')).toBe('true');
 		expect(container.querySelector('[data-testid="status-vt"]').textContent).toContain('VT7');
 		expect(container.querySelector('[data-testid="toast-container"]').textContent).toContain('Clipboard synced');
-		expect(container.querySelector('[data-testid="boot-progress-overlay"]').textContent).toContain('45%');
+
+		const overlayEl = container.querySelector('[data-testid="boot-progress-overlay"]');
+		expect(overlayEl.textContent).toContain('45%');
+		expect(overlayEl.firstElementChild.className).toContain('pointer-events-none');
+
+		// Interactive ECO Power-Saver toggle in StatusBar
+		const ecoBtn = container.querySelector('[data-testid="status-power-saver"]');
+		expect(ecoBtn.tagName).toBe('BUTTON');
+		expect(ecoBtn.getAttribute('aria-pressed')).toBe('false');
+		ecoBtn.click();
+		await tick();
+		expect(get(settings).powerSaver).toBe(true);
+		expect(ecoBtn.getAttribute('aria-pressed')).toBe('true');
 
 		const themeSelect = container.querySelector('[data-testid="setting-theme"]');
 		themeSelect.value = 'high-contrast';
 		themeSelect.dispatchEvent(new Event('change'));
 		await tick();
 		expect(get(settings).theme).toBe('high-contrast');
+
+		// Clearing fontSize input does not snap to min prematurely and restores on blur
+		const fontInput = container.querySelector('[data-testid="setting-font-size"]');
+		fontInput.dispatchEvent(new Event('focus'));
+		fontInput.value = '';
+		fontInput.dispatchEvent(new Event('input'));
+		await tick();
+		expect(get(settings).fontSize).toBe(14);
+		fontInput.dispatchEvent(new Event('blur'));
+		await tick();
+		expect(fontInput.value).toBe('14');
+		expect(get(settings).fontSize).toBe(14);
 
 		toolbar.$destroy();
 		searchBar.$destroy();

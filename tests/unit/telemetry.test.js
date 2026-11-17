@@ -146,4 +146,82 @@ describe('telemetry.js ring-buffer tracker', () => {
 		tracker.dispose();
 		expect(tracker.isTimerRunning()).toBe(false);
 	});
+
+	it('does not fabricate phantom CPU spikes when ring buffer overflows inside cpuWindowMs', () => {
+		let nowMs = 10000;
+		const cpuActivity = writable(false);
+		const diskActivity = writable(false);
+		const cpuPercentage = writable(0);
+		const diskLatency = writable(0);
+
+		const tracker = createTelemetryTracker({
+			cpuActivity,
+			diskActivity,
+			cpuPercentage,
+			diskLatency,
+			cpuWindowMs: 10000,
+			cpuBufferCapacity: 4,
+			flushIntervalMs: 250,
+			now: () => nowMs
+		});
+
+		// 10 short 10ms active bursts separated by 10ms idle (total active = 100ms out of 10000ms = 1%)
+		for (let i = 0; i < 10; i++) {
+			tracker.recordCpu('busy');
+			nowMs += 10;
+			tracker.recordCpu('ready');
+			nowMs += 10;
+		}
+		tracker.flush();
+		// Must be ~1% (not ~99% phantom spike from baseline extrapolation!)
+		expect(get(cpuPercentage)).toBeLessThanOrEqual(2);
+		expect(get(cpuPercentage)).toBeGreaterThanOrEqual(1);
+
+		// Consecutive identical CPU states coalesce without overflowing
+		tracker.recordCpu('busy');
+		nowMs += 50;
+		tracker.recordCpu('busy');
+		nowMs += 50;
+		tracker.recordCpu('busy');
+		tracker.recordCpu('ready');
+		tracker.flush();
+		expect(get(cpuPercentage)).toBe(2); // 100ms + 100ms = 200ms / 10000ms = 2%
+
+		// After window passes, evictedActiveMs and buffered events expire cleanly to 0%
+		nowMs += 11000;
+		tracker.flush();
+		expect(get(cpuPercentage)).toBe(0);
+
+		tracker.dispose();
+	});
+
+	it('rejects null, booleans, empty/whitespace strings, objects, NaN, negative, and Infinity in recordLatency', () => {
+		const cpuActivity = writable(false);
+		const diskActivity = writable(false);
+		const cpuPercentage = writable(0);
+		const diskLatency = writable(0);
+
+		const tracker = createTelemetryTracker({
+			cpuActivity,
+			diskActivity,
+			cpuPercentage,
+			diskLatency
+		});
+
+		for (const bad of [null, undefined, true, false, '', '   ', {}, [], [5], NaN, -1, Infinity, -Infinity]) {
+			tracker.recordLatency(bad);
+		}
+		tracker.flush();
+		expect(get(diskLatency)).toBe(0);
+
+		tracker.recordLatency(-0);
+		tracker.flush();
+		expect(Object.is(get(diskLatency), 0)).toBe(true);
+
+		tracker.recordLatency('14.2');
+		tracker.flush();
+		expect(get(diskLatency)).toBe(8);
+
+		tracker.dispose();
+	});
 });

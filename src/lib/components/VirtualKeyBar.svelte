@@ -1,13 +1,16 @@
 <script>
 	import { createEventDispatcher } from 'svelte';
+	import { applyTerminalModifiers } from '$lib/vm/terminalIO.js';
 
 	export let visible = false;
 	export let activeVt = 1;
+	export let stickyCtrl = false;
+	export let ctrlLocked = false;
+	export let stickyAlt = false;
+	export let altLocked = false;
 
 	const dispatch = createEventDispatcher();
 
-	let ctrlActive = false;
-	let altActive = false;
 	let showFnRow = false;
 
 	const FUNCTION_KEYS = [
@@ -25,22 +28,79 @@
 		{ label: 'F12', seq: '\x1b[24~' }
 	];
 
+	function emitModifierChange() {
+		dispatch('modifierChange', {
+			ctrl: stickyCtrl,
+			ctrlLocked,
+			alt: stickyAlt,
+			altLocked
+		});
+	}
+
+	function toggleCtrl() {
+		if (ctrlLocked) {
+			stickyCtrl = false;
+			ctrlLocked = false;
+		} else {
+			stickyCtrl = !stickyCtrl;
+			ctrlLocked = false;
+		}
+		emitModifierChange();
+	}
+
+	function lockCtrl() {
+		stickyCtrl = true;
+		ctrlLocked = true;
+		emitModifierChange();
+	}
+
+	function toggleAlt() {
+		if (altLocked) {
+			stickyAlt = false;
+			altLocked = false;
+		} else {
+			stickyAlt = !stickyAlt;
+			altLocked = false;
+		}
+		emitModifierChange();
+	}
+
+	function lockAlt() {
+		stickyAlt = true;
+		altLocked = true;
+		emitModifierChange();
+	}
+
 	function emitSequence(seq, allowMod = true) {
-		let out = seq;
-		if (allowMod && ctrlActive && out.length === 1) {
-			const code = out.toUpperCase().charCodeAt(0);
-			if (code >= 64 && code <= 95) {
-				out = String.fromCharCode(code - 64);
+		if (allowMod && (stickyCtrl || stickyAlt)) {
+			const { output, consumedCtrl, consumedAlt } = applyTerminalModifiers(seq, {
+				ctrl: stickyCtrl,
+				alt: stickyAlt
+			});
+			let changed = false;
+			if (consumedCtrl && !ctrlLocked) {
+				stickyCtrl = false;
+				changed = true;
 			}
-			ctrlActive = false;
-		} else if (allowMod && ctrlActive) {
-			ctrlActive = false;
+			if (consumedAlt && !altLocked) {
+				stickyAlt = false;
+				changed = true;
+			}
+			if (changed) {
+				emitModifierChange();
+			}
+			dispatch('sendKey', output);
+			return;
 		}
-		if (allowMod && altActive) {
-			out = `\x1b${out}`;
-			altActive = false;
+		dispatch('sendKey', seq);
+	}
+
+	function handleModInput(e) {
+		const val = e.currentTarget.value;
+		e.currentTarget.value = '';
+		if (val) {
+			emitSequence(val, true);
 		}
-		dispatch('sendKey', out);
 	}
 </script>
 
@@ -75,32 +135,52 @@
 			<button
 				type="button"
 				data-testid="vkey-ctrl"
-				aria-pressed={ctrlActive}
-				class="px-2 py-1 rounded border font-mono {ctrlActive
-					? 'bg-amber-600/40 border-amber-400 text-amber-200'
+				aria-pressed={stickyCtrl}
+				data-locked={ctrlLocked ? 'true' : 'false'}
+				title={ctrlLocked ? 'Ctrl locked (click to unlock)' : 'Sticky Ctrl (double-click to lock)'}
+				class="px-2 py-1 rounded border font-mono {stickyCtrl
+					? ctrlLocked
+						? 'bg-amber-500/50 border-amber-300 text-amber-100 font-semibold'
+						: 'bg-amber-600/40 border-amber-400 text-amber-200'
 					: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
 				on:mousedown|preventDefault
-				on:click={() => {
-					ctrlActive = !ctrlActive;
-				}}
+				on:click={toggleCtrl}
+				on:dblclick={lockCtrl}
 			>
-				Ctrl
+				Ctrl{ctrlLocked ? ' •' : ''}
 			</button>
 
 			<button
 				type="button"
 				data-testid="vkey-alt"
-				aria-pressed={altActive}
-				class="px-2 py-1 rounded border font-mono {altActive
-					? 'bg-amber-600/40 border-amber-400 text-amber-200'
+				aria-pressed={stickyAlt}
+				data-locked={altLocked ? 'true' : 'false'}
+				title={altLocked ? 'Alt locked (click to unlock)' : 'Sticky Alt (double-click to lock)'}
+				class="px-2 py-1 rounded border font-mono {stickyAlt
+					? altLocked
+						? 'bg-amber-500/50 border-amber-300 text-amber-100 font-semibold'
+						: 'bg-amber-600/40 border-amber-400 text-amber-200'
 					: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
 				on:mousedown|preventDefault
-				on:click={() => {
-					altActive = !altActive;
-				}}
+				on:click={toggleAlt}
+				on:dblclick={lockAlt}
 			>
-				Alt
+				Alt{altLocked ? ' •' : ''}
 			</button>
+
+			{#if stickyCtrl || stickyAlt}
+				<input
+					type="text"
+					data-testid="vkey-mod-input"
+					aria-label="Key for sticky modifier"
+					placeholder="Key…"
+					autocapitalize="none"
+					autocomplete="off"
+					spellcheck="false"
+					class="w-12 px-1.5 py-0.5 rounded bg-neutral-800 border border-amber-500/70 font-mono text-xs text-gray-100 placeholder:text-gray-400"
+					on:input={handleModInput}
+				/>
+			{/if}
 
 			<button
 				type="button"
