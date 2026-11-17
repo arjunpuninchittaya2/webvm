@@ -32,11 +32,11 @@ describe('M3 Files, Editor, Disk & SideBar UI components', () => {
 		container.remove();
 	});
 
-	it('SideBar registers Files and Editor tabs and works with default-safe props', async () => {
+	it('SideBar registers Workspace and Editor tabs and works with default-safe props', async () => {
 		mount(SideBar, { sideBarPinned: true, handleTool: vi.fn() });
 		await tick();
 
-		const filesBtn = container.querySelector('button[aria-label="Files"]');
+		const filesBtn = container.querySelector('button[aria-label="Workspace"]');
 		const editorBtn = container.querySelector('button[aria-label="Editor"]');
 		expect(filesBtn).toBeTruthy();
 		expect(editorBtn).toBeTruthy();

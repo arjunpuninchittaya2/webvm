@@ -27,7 +27,10 @@ const BASE_FA_CLASSES = new Set([
 	'fa-floppy-disk',
 	'fa-rotate-right',
 	'fa-arrow-up',
-	'fa-broom'
+	'fa-broom',
+	'fa-store',
+	'fa-globe',
+	'fa-plug'
 ]);
 
 const SOURCE_EXTENSIONS = new Set(['.svelte', '.js', '.ts', '.html']);

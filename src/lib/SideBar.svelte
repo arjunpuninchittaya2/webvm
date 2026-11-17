@@ -7,6 +7,7 @@
 	import DiskTab from './DiskTab.svelte';
 	import FilesTab from './FilesTab.svelte';
 	import EditorTab from './EditorTab.svelte';
+	import AppsTab from './components/AppsTab.svelte';
 	import PostsTab from './PostsTab.svelte';
 	import DiscordTab from './DiscordTab.svelte';
 	import GitHubTab from './GitHubTab.svelte';
@@ -19,8 +20,10 @@
 		{ icon: 'fas fa-wifi', info: 'Networking', activity: null },
 		{ icon: 'fas fa-microchip', info: 'CPU', activity: cpuActivity },
 		{ icon: 'fas fa-compact-disc', info: 'Disk', activity: diskActivity },
-		{ icon: 'fas fa-folder-open', info: 'Files', activity: null },
+		{ icon: 'fas fa-folder-open', info: 'Workspace', activity: null },
 		{ icon: 'fas fa-code', info: 'Editor', activity: null },
+		{ icon: 'fas fa-store', info: 'Apps', activity: null },
+		{ icon: 'fas fa-globe', info: 'Web Preview', activity: null },
 		{ icon: 'fas fa-robot', info: 'ClaudeAI', activity: aiActivity },
 		null,
 		{ icon: 'fas fa-book-open', info: 'Posts', activity: null },
@@ -95,7 +98,7 @@
 			return;
 		}
 		if (activeInfo === icon.info) {
-			if (panelSource === 'hover') {
+			if (panelSource === 'hover' || icon.info === 'Web Preview') {
 				panelSource = 'click';
 			} else {
 				activeInfo = null;
@@ -200,7 +203,7 @@
 			<CpuTab/>
 		{:else if activeInfo === 'Disk'}
 			<DiskTab on:reset on:resetWorkspace/>
-		{:else if activeInfo === 'Files'}
+		{:else if activeInfo === 'Workspace'}
 			<FilesTab
 				{vmManager}
 				{fileBridge}
@@ -211,6 +214,18 @@
 				{vmManager}
 				{fileBridge}
 				initialFile={editorTargetFile}
+			/>
+		{:else if activeInfo === 'Apps'}
+			<AppsTab
+				{vmManager}
+				{fileBridge}
+				initialSubTab="catalog"
+			/>
+		{:else if activeInfo === 'Web Preview'}
+			<AppsTab
+				{vmManager}
+				{fileBridge}
+				initialSubTab="preview"
 			/>
 		{:else if activeInfo === 'ClaudeAI'}
 			{#await import('./AnthropicTab.svelte') then { default: AnthropicTab }}

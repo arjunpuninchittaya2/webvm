@@ -12,7 +12,7 @@
 	import '$lib/global.css';
 	import '@xterm/xterm/css/xterm.css';
 	import '@fortawesome/fontawesome-free/css/all.min.css';
-	import { networkInterface, networkData, startLogin } from '$lib/network.js';
+	import { networkInterface, networkData, startLogin, setPopupBlocked } from '$lib/network.js';
 	import { handleToolImpl } from '$lib/anthropic.js';
 	import { settings } from '$lib/stores/settings.js';
 	import {
@@ -42,6 +42,8 @@
 	const connectionState = networkData.connectionState;
 	$: if ($connectionState === 'CONNECTED' && networkData.currentIp) {
 		tailscaleIp.set(networkData.currentIp);
+	} else if ($connectionState === 'DISCONNECTED') {
+		tailscaleIp.set(null);
 	}
 
 	let consoleElement = null;
@@ -150,24 +152,39 @@
 		vmManager.dispose();
 	});
 
+	let isConnectingNetwork = false;
 	async function handleConnect() {
-		if (networkInterface.authKey) {
-			networkData.connectionState.set('LOGINSTARTING');
-			vmManager.networkLogin();
+		if (isConnectingNetwork || $connectionState === 'LOGINSTARTING' || $connectionState === 'CONNECTED') {
 			return;
 		}
-		const w = window.open('login.html', '_blank');
-		vmManager.networkLogin();
+		isConnectingNetwork = true;
+		setPopupBlocked(false);
 		try {
-			const url = await startLogin();
-			if (w) {
-				w.location.href = url;
-			} else {
+			if (networkInterface.authKey) {
+				networkData.connectionState.set('LOGINSTARTING');
+				vmManager.networkLogin();
+				return;
+			}
+			const w = window.open('login.html', '_blank');
+			if (!w) {
+				setPopupBlocked(true);
 				addToast({ message: 'Popup blocked — open Tailscale login from Networking tab', type: 'warning' });
 			}
-		} catch (e) {
-			w?.close();
-			console.warn(e);
+			vmManager.networkLogin();
+			try {
+				const url = await startLogin();
+				if (w) {
+					w.location.href = url;
+					setPopupBlocked(false);
+				} else {
+					setPopupBlocked(true);
+				}
+			} catch (e) {
+				w?.close?.();
+				console.warn(e);
+			}
+		} finally {
+			isConnectingNetwork = false;
 		}
 	}
 

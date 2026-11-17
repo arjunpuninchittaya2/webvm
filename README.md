@@ -222,6 +222,13 @@ WebVM configures the following CheerpX Linux mount points (`src/lib/vm/vmManager
 - **Workspace Snapshot Export & Import (`#24`)**: Export and restore `.json` workspace snapshots (`exportWorkspaceSnapshot` / `importWorkspaceSnapshot`) with schema validation and non-destructive error handling.
 - **Built-in Code/File Editor (`#25`)**: `src/lib/EditorTab.svelte` (`Editor` sidebar tab) provides in-browser file editing with binary/non-UTF-8 guard, `Tab` indentation, `Ctrl+S` save, host download, and 1-click **Run in Terminal**.
 
+### App Downloader, Package/Binary Runner, Networking & Web Preview (M4)
+
+- **Host-Browser HTTP & Package Downloader Bridge (`#26`)**: `src/lib/apps/downloader.js` fetches CORS-enabled URLs, GitHub raw/release shortcuts, PyPI (`pypi.org`) and npm (`registry.npmjs.org`) packages, and optional CORS-proxied URLs directly into `/home/user/workspace` and `/data`. Enforces strict `http:`/`https:` URL validation, optional SHA-256 verification (`crypto.subtle.digest` with abort-on-mismatch), automatic `.tar`/`.tar.gz`/`.tgz`/`.zip`/`.whl` extraction, and `+x` staging.
+- **Curated App Catalog & 1-Click Binary Runner (`#27`)**: `src/lib/apps/appCatalog.js` and `src/lib/components/AppsTab.svelte` (`Apps` sidebar tab) provide a searchable, Chromebook-friendly catalog (Python HTTP server/REPL, Node.js HTTP server, `gcc` C runner, Lua shell, HTML/CSS/JS starter) plus a 1-click workspace runner for scripts and `i386` ELF binaries (cleanly rejecting unsupported `x86_64` ELFs).
+- **Enhanced Tailscale/Headscale & Diagnostics (`#28`)**: `src/lib/network.js` and `src/lib/NetworkingTab.svelte` add a `controlUrl`/`authKey` form with `http:`/`https:` validation and `localStorage` persistence (`webvm.network.v1`), a safe `Disconnect` control, peer & exit-node status, idempotent connect with an accessible popup-blocker fallback link, and `DirectSocketsNetwork` capability reporting.
+- **Local Web App Preview & Network Diagnostics (`#29`)**: `src/lib/apps/webPreview.js` powers an in-app sandboxed `<iframe>` Web Preview (with reactive updates and inline relative CSS/JS resolution), a `1–65535`-validated local/Tailscale service preview link builder, and live `crossOriginIsolated` / `navigator.onLine` / Host Fetch Bridge diagnostics.
+
 
 For the full Alpine desktop environment, see [leaningtech/alpine-image](https://github.com/leaningtech/alpine-image).
 
