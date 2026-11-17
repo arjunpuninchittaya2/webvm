@@ -5,7 +5,6 @@
 	import PanelButton from './PanelButton.svelte';
 	import SmallButton from './SmallButton.svelte';
 	import { aiActivity } from './activities.js';
-	import html2canvas from 'html2canvas-pro';
 	export let handleTool;
 	let stopRequested = false;
 	function handleKeyEnter(e)
@@ -41,7 +40,7 @@
 		await tick();
 		node.scrollTop = node.scrollHeight;
 		if (!get(aiActivity)) {
-			document.getElementById("ai-input").focus();
+			document.getElementById("ai-input")?.focus();
 		}
 	}
 	function scrollMessage(node, messageList)
@@ -62,14 +61,20 @@
 
 	async function handleDownload() {
 		const messageListElement = document.getElementById('message-list');
+		if (!messageListElement) return;
 		// Temporarily add padding and background for the list
 		messageListElement.classList.add("p-1");
-		const canvas = await html2canvas(messageListElement);
-		messageListElement.classList.remove("p-1");
-		const link = document.createElement('a');
-		link.href = canvas.toDataURL('image/png');
-		link.download = 'WebVM_Claude.png';
-		link.click();
+		try {
+			const mod = await import('html2canvas-pro');
+			const html2canvas = mod.default || mod;
+			const canvas = await html2canvas(messageListElement);
+			const link = document.createElement('a');
+			link.href = canvas.toDataURL('image/png');
+			link.download = 'WebVM_Claude.png';
+			link.click();
+		} finally {
+			messageListElement.classList.remove("p-1");
+		}
 	}
 
 	function toggleThinkingMode() {

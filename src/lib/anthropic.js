@@ -3,8 +3,7 @@ import { browser } from '$app/environment'
 import { aiActivity } from '$lib/activities.js'
 import { tryPlausible } from '$lib/plausible.js';
 
-import Anthropic from '@anthropic-ai/sdk';
-
+var apiKey = null;
 var client = null;
 var messages = [];
 var stopFlag = false;
@@ -12,20 +11,43 @@ var lastScreenshot = null;
 var screenshotCanvas = null;
 var screenshotCtx = null;
 
+async function getClient()
+{
+	if (client)
+		return client;
+	if (!apiKey)
+		throw new Error('Anthropic API key is not configured');
+	const mod = await import('@anthropic-ai/sdk');
+	const Anthropic = mod.default || mod.Anthropic || mod;
+	client = new Anthropic({ apiKey: apiKey, dangerouslyAllowBrowser: true });
+	return client;
+}
+
 export function setApiKey(key)
 {
-	client = new Anthropic({apiKey: key, dangerouslyAllowBrowser: true});
+	apiKey = key;
+	client = null;
 	// Reset messages
-	messages = []
+	messages = [];
 	messageList.set(messages);
-	localStorage.setItem("anthropic-api-key", key);
+	try {
+		localStorage.setItem("anthropic-api-key", key);
+	} catch {
+		// Ignore storage errors
+	}
 	apiState.set("READY");
 	tryPlausible("ClaudeAI Key");
 }
 
 function clearApiKey()
 {
-	localStorage.removeItem("anthropic-api-key");
+	apiKey = null;
+	client = null;
+	try {
+		localStorage.removeItem("anthropic-api-key");
+	} catch {
+		// Ignore storage errors
+	}
 	apiState.set("KEY_REQUIRED");
 }
 
@@ -40,106 +62,106 @@ async function sendMessages(handleTool)
 	aiActivity.set(true);
 	try
 	{
-		var dc = get(displayConfig);
-		var tool = dc ? { type: "computer_20250124", name: "computer", display_width_px: dc.width, display_height_px: dc.height, display_number: 1 } : { type: "bash_20250124", name: "bash" }
-		const config = {max_tokens: 2048,
-									messages: messages,
-									system: "You are running on a virtualized machine. Wait some extra time after all operations to compensate for slowdown.",
-									model: 'claude-3-7-sonnet-20250219',
-									tools: [tool],
-									tool_choice: {type: "auto", disable_parallel_tool_use: true},
-									betas: ["computer-use-2025-01-24"]
-								};
-		if(get(enableThinking))
-			config.thinking = { type: "enabled", budget_tokens: 1024 };
-		const response = await client.beta.messages.create(config);
-		if(stopFlag)
+		const activeClient = await getClient();
+		while (!stopFlag)
 		{
-			aiActivity.set(false);
-			return;
-		}
-		// Remove all the image payloads, we don't want to send them over and over again
-		for(var i=0;i<messages.length;i++)
-		{
-			var c = messages[i].content;
-			if(Array.isArray(c))
+			var dc = get(displayConfig);
+			var tool = dc ? { type: "computer_20250124", name: "computer", display_width_px: dc.width, display_height_px: dc.height, display_number: 1 } : { type: "bash_20250124", name: "bash" }
+			const config = {
+				max_tokens: 2048,
+				messages: messages,
+				system: "You are running on a virtualized machine. Wait some extra time after all operations to compensate for slowdown.",
+				model: 'claude-3-7-sonnet-20250219',
+				tools: [tool],
+				tool_choice: {type: "auto", disable_parallel_tool_use: true},
+				betas: ["computer-use-2025-01-24"]
+			};
+			if(get(enableThinking))
+				config.thinking = { type: "enabled", budget_tokens: 1024 };
+			const response = await activeClient.beta.messages.create(config);
+			if(stopFlag)
+				break;
+			// Remove all the image payloads, we don't want to send them over and over again
+			for(var i=0;i<messages.length;i++)
 			{
-				if(c[0].type == "tool_result" && c[0].content && c[0].content[0].type == "image")
+				var c = messages[i].content;
+				if(Array.isArray(c) && c.length > 0 && c[0]?.type == "tool_result" && Array.isArray(c[0].content) && c[0].content[0]?.type == "image")
 					delete c[0].content;
 			}
-		}
-		var content = response.content;
-		// Be robust to multiple response
-		for(var i=0;i<content.length;i++)
-		{
-			var c = content[i];
-			if(c.type == "text")
+			var content = response.content || [];
+			var didToolUse = false;
+			// Be robust to multiple response blocks
+			for(var i=0;i<content.length;i++)
 			{
-				addMessageInternal(response.role, c.text);
-			}
-			else if(c.type == "tool_use")
-			{
-				addMessageInternal(response.role, [c]);
-				var commandResponse = await handleTool(c.input);
-				var responseObj = {type: "tool_result", tool_use_id: c.id };
-				if(commandResponse != null)
+				var block = content[i];
+				if(block.type == "text")
 				{
-					if(commandResponse instanceof Error)
-					{
-						console.warn(`Tool error: ${commandResponse.message}`);
-						responseObj.content = commandResponse.message;
-						responseObj.is_error = true;
-					}
-					else
-					{
-						responseObj.content = commandResponse;
-					}
+					addMessageInternal(response.role, block.text);
 				}
-				addMessageInternal("user", [responseObj]);
-				if(stopFlag)
+				else if(block.type == "tool_use")
 				{
-					// Maintain state consitency by stopping after adding a valid response
-					aiActivity.set(false);
-					return;
+					addMessageInternal(response.role, [block]);
+					var commandResponse = await handleTool(block.input);
+					var responseObj = {type: "tool_result", tool_use_id: block.id };
+					if(commandResponse != null)
+					{
+						if(commandResponse instanceof Error)
+						{
+							console.warn(`Tool error: ${commandResponse.message}`);
+							responseObj.content = commandResponse.message;
+							responseObj.is_error = true;
+						}
+						else
+						{
+							responseObj.content = commandResponse;
+						}
+					}
+					addMessageInternal("user", [responseObj]);
+					didToolUse = true;
+					if(stopFlag)
+						break;
 				}
-				sendMessages(handleTool);
+				else if(block.type == "thinking")
+				{
+					addMessageInternal(response.role, [block]);
+				}
+				else
+				{
+					console.warn(`Invalid response type: ${block.type}`);
+				}
 			}
-			else if(c.type == "thinking")
+			if(!didToolUse || stopFlag)
 			{
-				addMessageInternal(response.role, [c]);
+				if(response.stop_reason == "end_turn")
+					tryPlausible("ClaudeAI Success");
+				break;
 			}
-			else
-			{
-				console.warn(`Invalid response type: ${c.type}`);
-			}
-		}
-		if(response.stop_reason == "end_turn")
-		{
-			tryPlausible("ClaudeAI Success");
-			aiActivity.set(false);
 		}
 	}
 	catch(e)
 	{
 		tryPlausible("ClaudeAI Error");
-		if(e.status == 401)
+		if(e?.status == 401)
 		{
 			addMessageInternal('error', 'Invalid API key');
 			clearApiKey();
 		}
 		else
 		{
-			addMessageInternal('error', e.error.error.message);
+			const errMsg = e?.error?.error?.message || e?.error?.message || e?.message || String(e || 'Unknown error');
+			addMessageInternal('error', errMsg);
 		}
-			
+	}
+	finally
+	{
+		aiActivity.set(false);
 	}
 }
 
 export function addMessage(text, handleTool)
 {
 	addMessageInternal('user', text);
-	sendMessages(handleTool);
-	tryPlausible("ClaudeAI Use");
+	return sendMessages(handleTool);
 }
 
 export function clearMessageHistory() {
@@ -247,29 +269,49 @@ export async function handleToolImpl(tool, term)
 {
 	if(tool.command)
 	{
+		if(!term)
+			return new Error("Error: Terminal is not initialized");
 		var sentinel = "# End of AI command";
 		var buffer = term.buffer.active;
-		// Get the current cursor position
-		var marker = term.registerMarker();
-		var startLine = marker.line;
-		marker.dispose();
+		// Track the last finalized line with a persistent IMarker so scrollback trimming shifts it safely
+		var scannedMarker = term.registerMarker(0);
+		var finalizedLines = [];
 		var ret = new Promise(function(f, r)
 		{
 			var callbackDisposer = term.onWriteParsed(function()
 			{
-				var curLength = buffer.length;
-				// Accumulate the output and see if the sentinel has been printed
-				var output = "";
-				for(var i=startLine + 1;i<curLength;i++)
+				var cursorLine = Math.min(buffer.baseY + buffer.cursorY, buffer.length - 1);
+				var scannedUntil = (!scannedMarker || scannedMarker.isDisposed || scannedMarker.line === -1)
+					? -1
+					: scannedMarker.line;
+				var startIdx = Math.max(0, scannedUntil + 1);
+				var lastFinalized = scannedUntil;
+				for(var i = startIdx; i <= cursorLine; i++)
 				{
-					var curLine = buffer.getLine(i).translateToString(true, 0, term.cols);;
+					var lineObj = buffer.getLine(i);
+					if(!lineObj)
+						continue;
+					var curLine = lineObj.translateToString(true, 0, term.cols);
 					if(curLine.indexOf(sentinel) >= 0)
 					{
 						// We are done, cleanup and return
 						callbackDisposer.dispose();
-						return f(output);
+						if(scannedMarker && !scannedMarker.isDisposed)
+							scannedMarker.dispose();
+						return f(finalizedLines.length > 0 ? finalizedLines.join("\n") + "\n" : "");
 					}
-					output += curLine + "\n";
+					if(i < cursorLine)
+					{
+						finalizedLines.push(curLine);
+						lastFinalized = i;
+					}
+				}
+				if(lastFinalized > scannedUntil)
+				{
+					if(scannedMarker && !scannedMarker.isDisposed)
+						scannedMarker.dispose();
+					var currentCursorAbs = buffer.baseY + buffer.cursorY;
+					scannedMarker = term.registerMarker(lastFinalized - currentCursorAbs);
 				}
 			});
 		});
@@ -492,9 +534,16 @@ export async function handleToolImpl(tool, term)
 
 function initialize()
 {
-	var savedApiKey = localStorage.getItem("anthropic-api-key");
-	if(savedApiKey)
-		setApiKey(savedApiKey);
+	try {
+		var savedApiKey = localStorage.getItem("anthropic-api-key");
+		if(savedApiKey)
+		{
+			apiKey = savedApiKey;
+			apiState.set("READY");
+		}
+	} catch {
+		// Ignore storage errors
+	}
 }
 
 export const apiState = writable("KEY_REQUIRED");

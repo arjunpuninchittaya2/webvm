@@ -1,5 +1,4 @@
 import { parse } from 'node-html-parser';
-import { read } from '$app/server';
 
 var posts = [
 	"https://labs.leaningtech.com/blog/webvm-claude",
@@ -14,7 +13,10 @@ var posts = [
 async function getPostData(u)
 {
 	var ret = { title: null, image: null, url: u };
-	var response = await fetch(u);
+	var response = await fetch(u, { signal: AbortSignal.timeout(3000) });
+	if (!response.ok) {
+		throw new Error(`HTTP ${response.status} for ${u}`);
+	}
 	var str = await response.text();
 	var root = parse(str);
 	var tags = root.getElementsByTagName("meta");
@@ -37,10 +39,13 @@ async function getPostData(u)
 
 export async function load()
 {
-	var ret = [];
-	for(var i=0;i<posts.length;i++)
-	{
-		ret.push(await getPostData(posts[i]));
+	try {
+		const results = await Promise.allSettled(posts.map((u) => getPostData(u)));
+		const ret = results
+			.filter((r) => r.status === 'fulfilled' && r.value && r.value.title)
+			.map((r) => r.value);
+		return { posts: ret };
+	} catch {
+		return { posts: [] };
 	}
-	return { posts: ret };
 }

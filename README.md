@@ -1,6 +1,6 @@
 # WebVM
 
-[![Discord server](https://img.shields.io/discord/988743885121548329?color=%235865F2&logo=discord&logoColor=%23fff)](https://discord.gg/yWRr2YnD9c)
+[![Discord server](https://img.shields.io/discord/988743885121548329?color=%235865F2&logo=discord&logoColor=%23fff)](https://discord.gg/yTNZgySKGa)
 [![Issues](https://img.shields.io/github/issues/leaningtech/webvm)](https://github.com/leaningtech/webvm/issues)
 
 This repository hosts the source code for [https://webvm.io](https://webvm.io), a Linux virtual machine that runs in your browser.
@@ -98,7 +98,7 @@ https://yourdomain.com/#controlUrl=<your-headscale-url>
 ## Development & Customization
 
 > [!NOTE]
-> Users have root privileges by default. `sudo` is not installed though this can easily be added to the Dockerfile if needed.
+> The default Debian terminal (`config_public_terminal.js`) boots as non-root `user` (`uid: 1000`, `gid: 1000`), while Alpine (`config_public_alpine.js`) boots as `root` (`uid: 0`, `gid: 0`). `sudo` is not pre-installed in the default Debian image (you can add it in the Dockerfile or use `su -` with password `password` in `debian_mini`).
 
 ### Deploy to GitHub Pages
 
@@ -149,20 +149,50 @@ export const diskImageUrl =
 export const diskImageType = "bytes";
 ```
 
-#### 4. Install dependencies and build
+#### 4. Install dependencies, develop, test, and build
 
 ```sh
 npm install
-npm run build
+npm run dev          # Start Vite dev server with COOP/COEP/CORP headers
+npm run check        # Run svelte-kit sync + svelte-check
+npm run build        # Build static site into build/ (works offline)
+npm run preview      # Preview build/ via Vite with COOP/COEP/CORP headers
+npm test             # Run Vitest unit tests (alias: npm run test:unit)
+npm run test:e2e     # Run Playwright-core Chromium smoke tests against build/
 ```
 
-#### 5. Start Nginx and open WebVM
+**Build environment variables:**
+- `WEBVM_MODE`: Set to `github` to resolve `/config_terminal` to `config_github_terminal.js`; defaults to `config_public_terminal.js`.
+- `CX_URL`: Optional URL/path override for the `@leaningtech/cheerpx` ESM module.
+
+#### 5. Serve locally with COOP/COEP headers
+
+WebVM requires `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` (`window.crossOriginIsolated === true`) for SharedArrayBuffer/CheerpX execution. You can use either the built-in Node preview server (`node tests/e2e/server.mjs` or `npm run preview`) or Nginx:
 
 ```sh
 nginx -p . -c nginx.conf
 ```
 
 Then open http://127.0.0.1:8081 and enjoy your local WebVM!
+
+#### Virtual Filesystem Mounts
+
+WebVM configures the following CheerpX Linux mount points (`src/lib/WebVM.svelte`):
+
+| Mount Path | Type | Backing Device |
+|---|---|---|
+| `/` | `ext2` | `OverlayDevice` (`CloudDevice` / `HttpBytesDevice` / `GitHubDevice` + `IDBDevice` cache) |
+| `/web` | `dir` | `WebDevice("")` (web server root files) |
+| `/data` | `dir` | `DataDevice` (host-to-VM data channel) |
+| `/home/user/documents` | `dir` | `WebDevice("documents")` (sample documents) |
+| `/dev`, `/dev/pts`, `/proc`, `/sys` | virtual | Linux device, PTY, proc, and sysfs pseudo-filesystems |
+
+#### Recent Foundation & Efficiency Improvements (M1)
+
+- **Offline-resilient SSR/builds**: `+layout.server.js` fetches blog metadata in parallel with timeouts and clean fallbacks so `npm run build` succeeds offline.
+- **Service Worker stability & Cache API caching**: Fixed undefined-response and `catch` errors, avoided reload loops when `crossOriginIsolated` is already enabled, and added `webvm-cache-v1` caching (cache-first for `/_app/immutable/*`, network-first for HTML, stale-while-revalidate for static assets, bypassing `Range`/cross-origin requests) while preserving COOP/COEP/CORP headers.
+- **Smaller, faster page load**: Removed unused `xterm/` files and excluded README-only GIFs/screenshots from `build/assets/`, optimized `assets/webvm_hero.png`, deferred analytics, removed render-blocking Google Fonts `@import`, fixed FontAwesome pruning so `.fa-robot` and all UI icons render, and lazy-loaded `@anthropic-ai/sdk` and `html2canvas-pro`.
+- **SSR & AI reliability**: Fixed SSR `localStorage` and TTL bugs in social counters, fixed `aiActivity` resets and null-safe error handling in `src/lib/anthropic.js`, and replaced the $O(N^2)$ terminal output scan with an `IMarker`-tracked incremental scan.
 
 For the full Alpine desktop environment, see [leaningtech/alpine-image](https://github.com/leaningtech/alpine-image).
 

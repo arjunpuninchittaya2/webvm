@@ -5,7 +5,6 @@
 	import NetworkingTab from './NetworkingTab.svelte';
 	import CpuTab from './CpuTab.svelte';
 	import DiskTab from './DiskTab.svelte';
-	import AnthropicTab from './AnthropicTab.svelte';
 	import PostsTab from './PostsTab.svelte';
 	import DiscordTab from './DiscordTab.svelte';
 	import GitHubTab from './GitHubTab.svelte';
@@ -108,7 +107,9 @@
 		{:else if activeInfo === 'Disk'}
 			<DiskTab on:reset/>
 		{:else if activeInfo === 'ClaudeAI'}
-			<AnthropicTab handleTool={handleTool} />
+			{#await import('./AnthropicTab.svelte') then { default: AnthropicTab }}
+				<AnthropicTab handleTool={handleTool} />
+			{/await}
 		{:else if activeInfo === 'Posts'}
 			<PostsTab/>
 		{:else if activeInfo === 'Discord'}

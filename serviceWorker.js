@@ -1,10 +1,11 @@
-async function handleFetch(request) {
-	// Perform the original fetch request and store the result in order to modify the response.
-	try {
-		var r = await fetch(request);
-	}
-	catch (e) {
-		console.error(e)
+const CACHE_NAME = "webvm-cache-v1";
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
+function withCoiHeaders(r) {
+	if (!r) {
+		return typeof Response.error === "function"
+			? Response.error()
+			: new Response("Service Unavailable", { status: 503 });
 	}
 	if (r.status === 0) {
 		return r;
@@ -21,26 +22,170 @@ async function handleFetch(request) {
 	 * To address this, we set the location URL to the resolved response URL and set the status code to 301 in the new Response object.
 	 * This causes the request to bounce back to the serviceworker from Cheerpos, with the event.request.url now set to the resolved URL, which allows the respondWith method to properly set the response URL in our new response.
 	 * https://developer.mozilla.org/en-US/docs/Web/API/FetchEvent/respondWith.
-	*/
-	if (r.redirected === true)
+	 */
+	if (r.redirected === true) {
 		newHeaders.set("location", r.url);
-	// In case of a redirection, we set the status to 301, and body to null, in order to not transfer too much data needlessly
-	const moddedResponse = new Response(r.redirected === true ? null : r.body, {
+	}
+	const hasNullBody = r.redirected === true || NULL_BODY_STATUSES.has(r.status);
+	// In case of a redirection or null-body status, pass null body so Response constructor never throws.
+	return new Response(hasNullBody ? null : r.body, {
 		headers: newHeaders,
 		status: r.redirected === true ? 301 : r.status,
 		statusText: r.statusText,
 	});
-	return moddedResponse;
+}
+
+function isCacheable(r) {
+	if (!r || !r.ok || r.status === 206 || r.redirected || r.type === "opaque") {
+		return false;
+	}
+	const cacheControl = r.headers ? (r.headers.get("cache-control") || "") : "";
+	return !cacheControl.includes("no-store");
+}
+
+function shouldBypassCache(request, url) {
+	if (request.method !== "GET") return true;
+	if (url.protocol !== "http:" && url.protocol !== "https:") return true;
+	if (request.headers && request.headers.has("range")) return true;
+	const origin = typeof self !== "undefined" && self.location ? self.location.origin : url.origin;
+	if (url.origin !== origin) return true;
+	if (url.pathname.endsWith("/serviceWorker.js")) return true;
+	return false;
+}
+
+async function openAppCache() {
+	if (typeof caches === "undefined") return null;
+	try {
+		return await caches.open(CACHE_NAME);
+	} catch {
+		return null;
+	}
+}
+
+async function safeFetch(request) {
+	try {
+		return await fetch(request);
+	} catch (e) {
+		console.error(e);
+		return undefined;
+	}
+}
+
+async function handleFetch(request, event) {
+	let url;
+	try {
+		url = new URL(request.url);
+	} catch {
+		const r = await safeFetch(request);
+		return withCoiHeaders(r);
+	}
+
+	if (shouldBypassCache(request, url)) {
+		const r = await safeFetch(request);
+		return withCoiHeaders(r);
+	}
+
+	const cache = await openAppCache();
+
+	// 1. Cache-first for immutable hashed SvelteKit bundles
+	if (url.pathname.startsWith("/_app/immutable/")) {
+		if (cache) {
+			const cached = await cache.match(request);
+			if (cached) {
+				return withCoiHeaders(cached);
+			}
+		}
+		const r = await safeFetch(request);
+		if (cache && isCacheable(r)) {
+			try {
+				await cache.put(request, r.clone());
+			} catch {
+				// Ignore cache quota errors
+			}
+		}
+		return withCoiHeaders(r);
+	}
+
+	// 2. Network-first with cache fallback for HTML navigations
+	const isNavigation =
+		request.mode === "navigate" ||
+		url.pathname === "/" ||
+		url.pathname.endsWith(".html");
+
+	if (isNavigation) {
+		const r = await safeFetch(request);
+		if (r) {
+			if (cache && isCacheable(r)) {
+				try {
+					await cache.put(request, r.clone());
+				} catch {
+					// Ignore cache quota errors
+				}
+			}
+			return withCoiHeaders(r);
+		}
+		if (cache) {
+			const cached = await cache.match(request);
+			if (cached) {
+				return withCoiHeaders(cached);
+			}
+		}
+		return withCoiHeaders(undefined);
+	}
+
+	// 3. Stale-while-revalidate for same-origin static assets (/assets/*, /documents/*, etc.)
+	if (cache) {
+		const cached = await cache.match(request);
+		if (cached) {
+			const refreshPromise = safeFetch(request).then(async (fresh) => {
+				if (isCacheable(fresh)) {
+					try {
+						await cache.put(request, fresh.clone());
+					} catch {
+						// Ignore cache quota errors
+					}
+				}
+			});
+			if (event && typeof event.waitUntil === "function") {
+				event.waitUntil(refreshPromise);
+			}
+			return withCoiHeaders(cached);
+		}
+	}
+
+	const r = await safeFetch(request);
+	if (cache && isCacheable(r)) {
+		try {
+			await cache.put(request, r.clone());
+		} catch {
+			// Ignore cache quota errors
+		}
+	}
+	return withCoiHeaders(r);
 }
 
 function serviceWorkerInit() {
 	// Init the service worker.
 	self.addEventListener("install", () => self.skipWaiting());
-	self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
+	self.addEventListener("activate", (e) => {
+		e.waitUntil(
+			(async () => {
+				if (typeof caches !== "undefined") {
+					const keys = await caches.keys();
+					await Promise.all(
+						keys
+							.filter((k) => k.startsWith("webvm-cache-") && k !== CACHE_NAME)
+							.map((k) => caches.delete(k))
+					);
+				}
+				await self.clients.claim();
+			})()
+		);
+	});
 	// Listen for fetch requests and call handleFetch function.
 	self.addEventListener("fetch", function (e) {
 		try {
-			e.respondWith(handleFetch(e.request));
+			e.respondWith(handleFetch(e.request, e));
 		} catch (err) {
 			console.log("Serviceworker NetworkError:" + err);
 		}
@@ -48,49 +193,79 @@ function serviceWorkerInit() {
 }
 
 async function doRegister() {
+	const needsCoiReload = !window.crossOriginIsolated;
+	const swUrl =
+		(window.document && window.document.currentScript && window.document.currentScript.src) ||
+		"serviceWorker.js";
 	try {
-		const registration = await navigator.serviceWorker.register(window.document.currentScript.src);
+		const registration = await navigator.serviceWorker.register(swUrl);
 		console.log("Service Worker registered", registration.scope);
 		// EventListener to make sure that the page gets reloaded when a new serviceworker gets installed.
-		// f.e on first access.
+		// Only reload if the page is not already crossOriginIsolated.
 		registration.addEventListener("updatefound", () => {
-			console.log("Reloading the page to transfer control to the Service Worker.");
-			try {
-				window.location.reload();
-			} catch (err) {
-				console.log("Service Worker failed reloading the page. ERROR:" + err);
-			};
+			if (!needsCoiReload) return;
+			const installing = registration.installing;
+			if (!installing) {
+				console.log("Reloading the page to transfer control to the Service Worker.");
+				try {
+					window.location.reload();
+				} catch (err) {
+					console.log("Service Worker failed reloading the page. ERROR:" + err);
+				}
+				return;
+			}
+			installing.addEventListener("statechange", () => {
+				if (installing.state === "installed" || installing.state === "activated") {
+					console.log("Reloading the page to transfer control to the Service Worker.");
+					try {
+						window.location.reload();
+					} catch (err) {
+						console.log("Service Worker failed reloading the page. ERROR:" + err);
+					}
+				}
+			});
 		});
 		// When the registration is active, but it's not controlling the page, we reload the page to have it take control.
-		// This f.e occurs when you hard-reload (shift + refresh). https://www.w3.org/TR/service-workers/#navigator-service-worker-controller
-		if (registration.active && !navigator.serviceWorker.controller) {
+		if (needsCoiReload && registration.active && !navigator.serviceWorker.controller) {
 			console.log("Reloading the page to transfer control to the Service Worker.");
 			try {
 				window.location.reload();
 			} catch (err) {
 				console.log("Service Worker failed reloading the page. ERROR:" + err);
-			};
+			}
 		}
-	}
-	catch {
-		console.error("Service Worker failed to register:", e)
+	} catch (e) {
+		console.error("Service Worker failed to register:", e);
 	}
 }
 
 async function serviceWorkerRegister() {
-	if (window.crossOriginIsolated) return;
 	if (!window.isSecureContext) {
 		console.log("Service Worker not registered, a secure context is required.");
 		return;
 	}
-	// Register the service worker and reload the page to transfer control to the serviceworker.
+	// Register the service worker for COOP/COEP headers and offline asset caching.
 	if ("serviceWorker" in navigator)
 		await doRegister();
 	else
 		console.log("Service worker is not supported in this browser");
 }
 
-if (typeof window === 'undefined') // If the script is running in a Service Worker context
-	serviceWorkerInit()
-else // If the script is running in the browser context
+if (typeof module !== "undefined" && module.exports) {
+	module.exports = {
+		CACHE_NAME,
+		withCoiHeaders,
+		isCacheable,
+		shouldBypassCache,
+		handleFetch,
+		serviceWorkerInit,
+		doRegister,
+		serviceWorkerRegister,
+	};
+} else if (typeof window === "undefined") {
+	// If the script is running in a Service Worker context
+	serviceWorkerInit();
+} else {
+	// If the script is running in the browser context
 	serviceWorkerRegister();
+}
