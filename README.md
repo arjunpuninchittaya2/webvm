@@ -177,7 +177,7 @@ Then open http://127.0.0.1:8081 and enjoy your local WebVM!
 
 #### Virtual Filesystem Mounts
 
-WebVM configures the following CheerpX Linux mount points (`src/lib/WebVM.svelte`):
+WebVM configures the following CheerpX Linux mount points (`src/lib/vm/vmManager.js`):
 
 | Mount Path | Type | Backing Device |
 |---|---|---|
@@ -193,6 +193,26 @@ WebVM configures the following CheerpX Linux mount points (`src/lib/WebVM.svelte
 - **Service Worker stability & Cache API caching**: Fixed undefined-response and `catch` errors, avoided reload loops when `crossOriginIsolated` is already enabled, and added `webvm-cache-v1` caching (cache-first for `/_app/immutable/*`, network-first for HTML, stale-while-revalidate for static assets, bypassing `Range`/cross-origin requests) while preserving COOP/COEP/CORP headers.
 - **Smaller, faster page load**: Removed unused `xterm/` files and excluded README-only GIFs/screenshots from `build/assets/`, optimized `assets/webvm_hero.png`, deferred analytics, removed render-blocking Google Fonts `@import`, fixed FontAwesome pruning so `.fa-robot` and all UI icons render, and lazy-loaded `@anthropic-ai/sdk` and `html2canvas-pro`.
 - **SSR & AI reliability**: Fixed SSR `localStorage` and TTL bugs in social counters, fixed `aiActivity` resets and null-safe error handling in `src/lib/anthropic.js`, and replaced the $O(N^2)$ terminal output scan with an `IMarker`-tracked incremental scan.
+
+#### Workstation Engine, Efficiency & Multi-Session Improvements (M2)
+
+- **Modular VM & I/O architecture**:
+  - `src/lib/vm/telemetry.js`: Fixed-capacity `Float64Array`/`Uint8Array` ring buffers for CPU utilization and 30-sample disk latency with a single coalesced 250ms timer, dirty-checked Svelte store updates, automatic idle/hidden pause, and 60-point history.
+  - `src/lib/vm/terminalIO.js`: `requestAnimationFrame`-batched `term.write` buffer (64KB/frame cap, 256KB backpressure drain), UTF-8 `TextEncoder` chunked `InputWriter` (`128` bytes per `4ms` tick), raw binary mouse sequence forwarding, and OSC-52 clipboard handler.
+  - `src/lib/vm/vmManager.js`: Parallel dynamic module loading and device `.create()` boot with progress (`BootProgressOverlay.svelte`), WebGL terminal renderer with automatic DOM fallback on context loss (`@xterm/addon-webgl`), regex/case/word search (`@xterm/addon-search`), debounced `ResizeObserver` PTY sync, native KMS scaling (`displayScale`), visibility power-saver mode, and full `onDestroy` resource cleanup.
+- **Multi-Tab Workstation & VT1 ↔ VT7 Display Controls**:
+  - `TerminalTabBar.svelte` & `src/lib/stores/sessions.js`: Up to 8 terminal tabs — Tab 1 owns raw `/dev/tty1` PTY in a restartable loop with exit-code reporting, while `+ New Tab` spawns interactive JS-hosted shell sessions (`cd`, `export`, history, `Ctrl+C`/`Ctrl+L`, command dispatch via `cx.run('/bin/sh', ['-c', ...])`) and `runSession` task tabs with rename, close, and restart controls.
+  - `TerminalToolbar.svelte`: Copy/Paste buttons (with X11 KMS paste bridge on VT7), Search toggle, Chromebook Virtual Key Bar toggle, bidirectional `VT1 ↔ VT7` switcher, Display Pause/Resume, and Display Scale selector (`0.5x`–`2x`) on `/alpine.html`.
+- **Chromebook Virtual Keys, Persistent Settings & Accessibility**:
+  - `VirtualKeyBar.svelte`: Focus-preserving (`mousedown|preventDefault`) virtual keys with sticky `Ctrl`/`Alt`, `Esc`, `Tab`, `Ctrl+C`/`D`/`Z`/`L`, arrows, navigation keys, clipboard actions, and collapsible `F1`–`F12` keys.
+  - `SettingsModal.svelte` & `src/lib/stores/settings.js`: `localStorage`-persisted (`webvm.settings.v1`) theme (`dark`, `light`, `solarized`, `high-contrast`), font size/family, scrollback, renderer (`auto`/`webgl`/`dom`), cursor blink, power-saver mode, sidebar pin, and display scale.
+  - `StatusBar.svelte` & `ToastContainer.svelte`: Live VM state, VT, session dimensions, active renderer, CPU/disk telemetry, Tailscale IP, and toast notifications; semantic `<button>`/ARIA controls across `Icon.svelte`, `SmallButton.svelte`, `PanelButton.svelte`, and `SideBar.svelte` (including pinned-tab click switching).
+
+**Workstation keyboard shortcuts:**
+- `Ctrl+Shift+F`: Toggle terminal search bar (`Enter` next, `Shift+Enter` previous, `Esc` close)
+- `Ctrl+Shift+C`: Copy selected terminal text
+- `Ctrl+Shift+V`: Paste clipboard into active terminal (or X11 display on VT7)
+
 
 For the full Alpine desktop environment, see [leaningtech/alpine-image](https://github.com/leaningtech/alpine-image).
 

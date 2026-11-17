@@ -1,0 +1,1598 @@
+import { get } from 'svelte/store';
+import { displayConfig } from '$lib/anthropic.js';
+import { introMessage, errorMessage, unexpectedErrorMessage } from '$lib/messages.js';
+import { tryPlausible } from '$lib/plausible.js';
+import { settings, getThemeDefinition } from '$lib/stores/settings.js';
+import {
+	MAX_SESSIONS,
+	sessions,
+	activeSessionId,
+	activeVt,
+	vtAvailable,
+	displayPaused,
+	bootState,
+	activeRenderer,
+	pageHidden,
+	vmState,
+	addToast,
+	upsertSession,
+	updateSession,
+	removeSession,
+	setActiveSession,
+	resetSessionsStore
+} from '$lib/stores/sessions.js';
+import { createTelemetryTracker } from './telemetry.js';
+import { createTerminalBatcher, createInputWriter, registerOsc52Handler } from './terminalIO.js';
+
+const SEARCH_DECORATIONS = {
+	matchBackground: '#665c00',
+	matchBorder: '#b58900',
+	matchOverviewRuler: '#b58900',
+	activeMatchBackground: '#d97706',
+	activeMatchBorder: '#fbbf24',
+	activeMatchColorOverviewRuler: '#fbbf24'
+};
+
+export function resolveShellPath(cwd, target, home = '/home/user') {
+	const base = cwd && cwd.startsWith('/') ? cwd : '/';
+	let raw = (target || '').trim();
+	if (!raw || raw === '~') {
+		raw = home || '/';
+	} else if (raw.startsWith('~/')) {
+		raw = `${home || ''}/${raw.slice(2)}`;
+	}
+	const combined = raw.startsWith('/') ? raw : `${base === '/' ? '' : base}/${raw}`;
+	const parts = combined.split('/');
+	const resolved = [];
+	for (const part of parts) {
+		if (!part || part === '.') continue;
+		if (part === '..') {
+			resolved.pop();
+		} else {
+			resolved.push(part);
+		}
+	}
+	return `/${resolved.join('/')}`;
+}
+
+export function shellQuote(str) {
+	return `'${String(str).replace(/'/g, `'\\''`)}'`;
+}
+
+export function updateEnvList(envList, key, value) {
+	const prefix = `${key}=`;
+	const filtered = (envList || []).filter((entry) => !entry.startsWith(prefix));
+	if (value !== undefined && value !== null) {
+		filtered.push(`${key}=${value}`);
+	}
+	return filtered;
+}
+
+export function getEnvValue(envList, key, fallback = '') {
+	const prefix = `${key}=`;
+	const match = (envList || []).find((entry) => entry.startsWith(prefix));
+	return match ? match.slice(prefix.length) : fallback;
+}
+
+export function getKmsInputElement() {
+	if (typeof document === 'undefined' || !document.body) return null;
+	for (const node of document.body.children) {
+		if (node.tagName === 'TEXTAREA') {
+			return node;
+		}
+	}
+	return null;
+}
+
+export async function sendTextToKms(text) {
+	const textArea = getKmsInputElement();
+	if (!textArea || !text) return false;
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		textArea.value = '_' + ch;
+		textArea.dispatchEvent(new KeyboardEvent('keydown', { key: ch }));
+		textArea.dispatchEvent(new KeyboardEvent('keyup', { key: ch }));
+		if (i % 8 === 7) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+	}
+	return true;
+}
+
+export function createVmManager(configObj, options = {}) {
+	const cacheId = options.cacheId || 'blocks_terminal';
+	const networkInterface = options.networkInterface || undefined;
+	const processCallback = options.processCallback || null;
+	const telemetry = options.telemetry || createTelemetryTracker();
+
+	let TerminalCtor = options.Terminal || null;
+	let FitAddonCtor = options.FitAddon || null;
+	let WebLinksAddonCtor = options.WebLinksAddon || null;
+	let SearchAddonCtor = options.SearchAddon || null;
+	let WebglAddonCtor = options.WebglAddon || null;
+	let CheerpXMod = options.CheerpX || null;
+
+	let consoleRoot = null;
+	let displayEl = null;
+	let cx = null;
+	let blockCache = null;
+	let cxReadFunc = null;
+	let processCount = 0;
+	let disposed = false;
+	let webglBlocked = false;
+	let activeRunTabId = null;
+	let secondaryRunChain = Promise.resolve();
+	let resizeObserver = null;
+	let resizeTimerId = null;
+	let resizeRafId = null;
+	let lastPtyCols = 0;
+	let lastPtyRows = 0;
+	let lastKmsWidth = 0;
+	let lastKmsHeight = 0;
+	let tabSeq = 1;
+	let primaryBootGen = 0;
+
+	const tabs = new Map();
+	const cleanups = [];
+	const searchListeners = new Set();
+
+	const inputWriter = createInputWriter(() => cxReadFunc);
+
+	let currentSettings = get(settings);
+	let lastFontSize = currentSettings.fontSize;
+	let lastFontFamily = currentSettings.fontFamily;
+	let lastThemeId = currentSettings.theme;
+	let lastScrollback = currentSettings.scrollback;
+	let lastCursorBlink = currentSettings.cursorBlink;
+	let lastRendererPref = currentSettings.renderer;
+	let lastDisplayScale = currentSettings.displayScale;
+	let lastPowerSaver = currentSettings.powerSaver;
+
+	function notifySearchChange(detail) {
+		for (const listener of searchListeners) {
+			listener(detail);
+		}
+	}
+
+	function getActiveTab() {
+		const activeId = get(activeSessionId);
+		return tabs.get(activeId) || tabs.get('tab-1') || null;
+	}
+
+	function getActiveTerminal() {
+		return getActiveTab()?.term || null;
+	}
+
+	function routeWriteData(buf, vt) {
+		if (disposed || vt !== 1) return;
+		const targetTab = (activeRunTabId && tabs.get(activeRunTabId)) || tabs.get('tab-1');
+		if (targetTab?.batcher) {
+			targetTab.batcher.write(buf);
+		}
+	}
+
+	function handleProcessCreated() {
+		processCount++;
+		if (processCallback) {
+			processCallback(processCount);
+		}
+	}
+
+	function handleActivateConsole(vt) {
+		if (disposed) return;
+		const normalized = vt === 7 ? 7 : 1;
+		if (get(activeVt) === normalized) return;
+		activeVt.set(normalized);
+		if (normalized === 7) {
+			tryPlausible('Display activated');
+		}
+	}
+
+	function setActiveVt(vt) {
+		const normalized = vt === 7 ? 7 : 1;
+		activeVt.set(normalized);
+		if (normalized === 1) {
+			getActiveTerminal()?.focus();
+			scheduleResize();
+		} else if (displayEl) {
+			applyDisplayScale(true);
+			getKmsInputElement()?.focus();
+		}
+	}
+
+	function syncPrimaryPtySize(cols, rows) {
+		if (disposed || !cx || cols <= 0 || rows <= 0) return;
+		if (cols === lastPtyCols && rows === lastPtyRows) return;
+		lastPtyCols = cols;
+		lastPtyRows = rows;
+		cxReadFunc = cx.setCustomConsole(routeWriteData, cols, rows);
+		updateSession('tab-1', { cols, rows });
+	}
+
+	function applyDisplayScale(force = false) {
+		if (disposed || !configObj?.needsDisplay || !cx || !displayEl) return;
+		if (get(displayPaused)) return;
+
+		const displayWidth = displayEl.clientWidth || displayEl.offsetWidth;
+		const displayHeight = displayEl.clientHeight || displayEl.offsetHeight;
+		if (displayWidth <= 0 || displayHeight <= 0) return;
+
+		const scale = Math.min(2.0, Math.max(0.5, Number(currentSettings.displayScale) || 1));
+		const internalWidth = Math.max(320, Math.floor(displayWidth * scale));
+		const internalHeight = Math.max(240, Math.floor(displayHeight * scale));
+
+		if (force || internalWidth !== lastKmsWidth || internalHeight !== lastKmsHeight) {
+			lastKmsWidth = internalWidth;
+			lastKmsHeight = internalHeight;
+			if (typeof cx.setKmsCanvas === 'function') {
+				cx.setKmsCanvas(displayEl, internalWidth, internalHeight);
+			}
+		}
+
+		let screenshotMult = 1.0;
+		const maxWidth = 1024;
+		const maxHeight = 768;
+		if (internalWidth > maxWidth) {
+			screenshotMult = maxWidth / internalWidth;
+		}
+		if (internalHeight > maxHeight) {
+			screenshotMult = Math.min(screenshotMult, maxHeight / internalHeight);
+		}
+		const screenshotWidth = Math.floor(internalWidth * screenshotMult);
+		const screenshotHeight = Math.floor(internalHeight * screenshotMult);
+		const internalMult = internalWidth / displayWidth;
+		displayConfig.set({
+			width: screenshotWidth,
+			height: screenshotHeight,
+			mouseMult: internalMult * screenshotMult
+		});
+	}
+
+	function syncWebglForActiveTab() {
+		if (disposed) return;
+		const activeTab = getActiveTab();
+		const wantWebgl = currentSettings.renderer !== 'dom' && !webglBlocked && Boolean(WebglAddonCtor);
+
+		for (const [id, tab] of tabs.entries()) {
+			const shouldKeep = wantWebgl && activeTab && id === activeTab.id;
+			if (!shouldKeep && tab.webglAddon) {
+				try {
+					tab.webglAddon.dispose();
+				} catch {
+					// Ignore disposal error
+				}
+				tab.webglAddon = null;
+			}
+		}
+
+		if (!activeTab || !wantWebgl) {
+			activeRenderer.set('dom');
+			return;
+		}
+
+		const hasDimensions =
+			(activeTab.hostEl.offsetWidth > 0 && activeTab.hostEl.offsetHeight > 0) ||
+			(consoleRoot?.offsetWidth > 0 && consoleRoot?.offsetHeight > 0);
+		if (activeTab.hostEl.style.display === 'none' || !hasDimensions) {
+			activeRenderer.set('dom');
+			return;
+		}
+
+		if (activeTab.webglAddon) {
+			activeRenderer.set('webgl');
+			return;
+		}
+
+		try {
+			const addon = new WebglAddonCtor();
+			addon.onContextLoss(() => {
+				try {
+					addon.dispose();
+				} catch {
+					// Ignore
+				}
+				activeTab.webglAddon = null;
+				webglBlocked = true;
+				activeRenderer.set('dom');
+				addToast({
+					message: 'WebGL context lost — fell back to DOM renderer',
+					type: 'warning'
+				});
+			});
+			activeTab.term.loadAddon(addon);
+			activeTab.webglAddon = addon;
+			activeRenderer.set('webgl');
+		} catch {
+			webglBlocked = true;
+			activeRenderer.set('dom');
+		}
+	}
+
+	function performResize() {
+		if (disposed) return;
+		const activeTab = getActiveTab();
+		const hasDimensions =
+			(activeTab?.hostEl?.offsetWidth > 0 && activeTab?.hostEl?.offsetHeight > 0) ||
+			(consoleRoot?.offsetWidth > 0 && consoleRoot?.offsetHeight > 0);
+		if (activeTab?.fitAddon && activeTab.hostEl.style.display !== 'none' && hasDimensions) {
+			try {
+				activeTab.fitAddon.fit();
+				updateSession(activeTab.id, {
+					cols: activeTab.term.cols,
+					rows: activeTab.term.rows
+				});
+				if (activeTab.id === 'tab-1') {
+					syncPrimaryPtySize(activeTab.term.cols, activeTab.term.rows);
+				}
+			} catch {
+				// Ignore transient layout states
+			}
+		}
+		applyDisplayScale();
+	}
+
+	function scheduleResize() {
+		if (disposed) return;
+		if (resizeTimerId !== null) {
+			clearTimeout(resizeTimerId);
+		}
+		resizeTimerId = setTimeout(() => {
+			resizeTimerId = null;
+			if (disposed) return;
+			if (typeof requestAnimationFrame === 'function') {
+				if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
+				resizeRafId = requestAnimationFrame(() => {
+					resizeRafId = null;
+					performResize();
+				});
+			} else {
+				performResize();
+			}
+		}, 150);
+	}
+
+	function applyTerminalSettings(next) {
+		currentSettings = next;
+		const hiddenOrSaver = (typeof document !== 'undefined' && document.hidden) || next.powerSaver;
+		const fontChanged = next.fontSize !== lastFontSize || next.fontFamily !== lastFontFamily;
+		const themeChanged = next.theme !== lastThemeId;
+		const scrollbackChanged = next.scrollback !== lastScrollback;
+		const blinkChanged = next.cursorBlink !== lastCursorBlink || next.powerSaver !== lastPowerSaver;
+		const rendererChanged = next.renderer !== lastRendererPref;
+		const scaleChanged = next.displayScale !== lastDisplayScale;
+
+		for (const tab of tabs.values()) {
+			const term = tab.term;
+			if (!term) continue;
+			if (next.fontSize !== lastFontSize) {
+				term.options.fontSize = next.fontSize;
+			}
+			if (next.fontFamily !== lastFontFamily) {
+				term.options.fontFamily = next.fontFamily;
+			}
+			if (themeChanged) {
+				term.options.theme = getThemeDefinition(next.theme);
+			}
+			if (scrollbackChanged) {
+				term.options.scrollback = next.scrollback;
+			}
+			if (blinkChanged) {
+				term.options.cursorBlink = hiddenOrSaver ? false : next.cursorBlink;
+			}
+		}
+
+		lastFontSize = next.fontSize;
+		lastFontFamily = next.fontFamily;
+		lastThemeId = next.theme;
+		lastScrollback = next.scrollback;
+		lastCursorBlink = next.cursorBlink;
+		lastPowerSaver = next.powerSaver;
+
+		if (rendererChanged) {
+			lastRendererPref = next.renderer;
+			if (next.renderer !== 'dom') {
+				webglBlocked = false;
+			}
+			syncWebglForActiveTab();
+		}
+
+		if (fontChanged) {
+			scheduleResize();
+		}
+		if (scaleChanged) {
+			lastDisplayScale = next.displayScale;
+			applyDisplayScale(true);
+		}
+		telemetry.setHidden(hiddenOrSaver);
+	}
+
+	function handleVisibilityChange() {
+		if (disposed || typeof document === 'undefined') return;
+		const docHidden = Boolean(document.hidden);
+		pageHidden.set(docHidden);
+		const pauseAll = docHidden || currentSettings.powerSaver;
+		for (const tab of tabs.values()) {
+			if (tab.term) {
+				tab.term.options.cursorBlink = pauseAll ? false : currentSettings.cursorBlink;
+			}
+		}
+		telemetry.setHidden(pauseAll);
+		if (!docHidden) {
+			scheduleResize();
+		}
+	}
+
+	function runSerializedCommand(tabId, fn) {
+		const task = secondaryRunChain.then(async () => {
+			if (disposed) return null;
+			activeRunTabId = tabId;
+			try {
+				return await fn();
+			} finally {
+				if (activeRunTabId === tabId) {
+					activeRunTabId = null;
+				}
+			}
+		});
+		secondaryRunChain = task.catch(() => {});
+		return task;
+	}
+
+	function attachShellController(tab) {
+		const home = getEnvValue(tab.env, 'HOME', '/home/user');
+		const user = getEnvValue(tab.env, 'USER', 'user');
+		let line = '';
+		let cursor = 0;
+		const history = [];
+		let historyIdx = 0;
+		let busy = false;
+		let exited = false;
+
+		function writeRaw(str) {
+			tab.batcher.writeText(str);
+		}
+
+		function renderPrompt(suffix = '') {
+			if (exited || disposed) return;
+			const shortCwd = tab.cwd === home ? '~' : tab.cwd;
+			const prefix = suffix ? `${suffix}` : '';
+			writeRaw(`${prefix}\x1b[32m${user}@webvm\x1b[0m:\x1b[34m${shortCwd}\x1b[0m$ `);
+		}
+
+		function redrawLine(prevLen) {
+			const moveStart = '\r';
+			const shortCwd = tab.cwd === home ? '~' : tab.cwd;
+			const promptText = `\x1b[32m${user}@webvm\x1b[0m:\x1b[34m${shortCwd}\x1b[0m$ `;
+			const clearTail = prevLen > line.length ? ' '.repeat(prevLen - line.length) : '';
+			const moveBack = line.length - cursor + clearTail.length;
+			const backSeq = moveBack > 0 ? `\x1b[${moveBack}D` : '';
+			writeRaw(`${moveStart}${promptText}${line}${clearTail}${backSeq}`);
+		}
+
+		function replaceLine(nextLine) {
+			const prevLen = line.length;
+			line = nextLine;
+			cursor = line.length;
+			redrawLine(prevLen);
+		}
+
+		async function executeLine(rawCmd) {
+			const trimmed = rawCmd.trim();
+			if (!trimmed) {
+				renderPrompt();
+				return;
+			}
+			if (history[history.length - 1] !== trimmed) {
+				history.push(trimmed);
+				if (history.length > 200) history.shift();
+			}
+			historyIdx = history.length;
+
+			if (trimmed === 'clear') {
+				tab.term.clear();
+				renderPrompt();
+				return;
+			}
+			if (trimmed === 'help') {
+				writeRaw(
+					'WebVM secondary shell tab (commands run via cx.run /bin/sh -c):\r\n' +
+						'  Built-ins: cd, pwd, export VAR=VAL, unset VAR, env, history, clear, exit\r\n'
+				);
+				renderPrompt();
+				return;
+			}
+			if (trimmed === 'pwd') {
+				writeRaw(`${tab.cwd}\r\n`);
+				renderPrompt();
+				return;
+			}
+			if (trimmed === 'env') {
+				writeRaw(tab.env.join('\r\n') + (tab.env.length ? '\r\n' : ''));
+				renderPrompt();
+				return;
+			}
+			if (trimmed === 'history') {
+				writeRaw(history.map((cmd, idx) => `  ${idx + 1}  ${cmd}`).join('\r\n') + '\r\n');
+				renderPrompt();
+				return;
+			}
+			if (trimmed === 'exit' || trimmed.startsWith('exit ')) {
+				const arg = trimmed.slice(4).trim();
+				const code = arg ? Number.parseInt(arg, 10) || 0 : 0;
+				exited = true;
+				updateSession(tab.id, { status: 'exited', exitCode: code });
+				writeRaw(`[Session exited with code ${code}]\r\n`);
+				return;
+			}
+			if (trimmed.startsWith('export ')) {
+				const rest = trimmed.slice(7).trim();
+				const eqIdx = rest.indexOf('=');
+				if (eqIdx > 0) {
+					const k = rest.slice(0, eqIdx).trim();
+					let v = rest.slice(eqIdx + 1).trim();
+					if (
+						(v.startsWith('"') && v.endsWith('"')) ||
+						(v.startsWith("'") && v.endsWith("'"))
+					) {
+						v = v.slice(1, -1);
+					}
+					tab.env = updateEnvList(tab.env, k, v);
+					updateSession(tab.id, { env: [...tab.env] });
+				}
+				renderPrompt();
+				return;
+			}
+			if (trimmed.startsWith('unset ')) {
+				const k = trimmed.slice(6).trim();
+				if (k) {
+					tab.env = updateEnvList(tab.env, k, null);
+					updateSession(tab.id, { env: [...tab.env] });
+				}
+				renderPrompt();
+				return;
+			}
+			if (trimmed === 'cd' || trimmed.startsWith('cd ')) {
+				const target = trimmed.slice(2).trim();
+				const nextDir = resolveShellPath(tab.cwd, target, home);
+				if (!cx) {
+					tab.cwd = nextDir;
+					tab.env = updateEnvList(tab.env, 'PWD', nextDir);
+					updateSession(tab.id, { cwd: nextDir, env: [...tab.env] });
+					renderPrompt();
+					return;
+				}
+				busy = true;
+				try {
+					const res = await runSerializedCommand(tab.id, () =>
+						cx.run('/bin/sh', ['-c', `test -d ${shellQuote(nextDir)}`], {
+							cwd: tab.cwd,
+							env: tab.env,
+							uid: configObj?.opts?.uid,
+							gid: configObj?.opts?.gid
+						})
+					);
+					const code = typeof res?.status === 'number' ? res.status : 0;
+					if (code === 0) {
+						tab.cwd = nextDir;
+						tab.env = updateEnvList(tab.env, 'PWD', nextDir);
+						updateSession(tab.id, { cwd: nextDir, env: [...tab.env], exitCode: 0 });
+					} else {
+						writeRaw(`cd: ${target}: No such directory\r\n`);
+						updateSession(tab.id, { exitCode: code });
+					}
+				} catch (err) {
+					writeRaw(`cd: ${err?.message || err}\r\n`);
+				} finally {
+					busy = false;
+				}
+				renderPrompt();
+				return;
+			}
+
+			if (!cx) {
+				writeRaw('[VM not ready yet — wait for boot or use local built-ins (help, pwd, env, cd)]\r\n');
+				renderPrompt();
+				return;
+			}
+
+			busy = true;
+			updateSession(tab.id, { status: 'running', exitCode: null });
+			try {
+				const res = await runSerializedCommand(tab.id, () =>
+					cx.run('/bin/sh', ['-c', trimmed], {
+						cwd: tab.cwd,
+						env: tab.env,
+						uid: configObj?.opts?.uid,
+						gid: configObj?.opts?.gid
+					})
+				);
+				const code = typeof res?.status === 'number' ? res.status : 0;
+				updateSession(tab.id, { status: 'running', exitCode: code });
+				if (code !== 0) {
+					writeRaw(`\r\n[exit ${code}]\r\n`);
+				}
+			} catch (err) {
+				updateSession(tab.id, { status: 'error', exitCode: 1 });
+				writeRaw(`\r\n[error: ${err?.message || err}]\r\n`);
+			} finally {
+				busy = false;
+			}
+			renderPrompt();
+		}
+
+		function handleData(data) {
+			if (disposed || exited) return;
+			if (busy) {
+				if (data === '\x03') {
+					writeRaw('^C\r\n');
+				}
+				return;
+			}
+
+			let i = 0;
+			while (i < data.length) {
+				if (data.startsWith('\x1b[A', i)) {
+					if (historyIdx > 0) {
+						historyIdx--;
+						replaceLine(history[historyIdx] || '');
+					}
+					i += 3;
+					continue;
+				}
+				if (data.startsWith('\x1b[B', i)) {
+					if (historyIdx < history.length) {
+						historyIdx++;
+						replaceLine(historyIdx === history.length ? '' : history[historyIdx] || '');
+					}
+					i += 3;
+					continue;
+				}
+				if (data.startsWith('\x1b[D', i)) {
+					if (cursor > 0) {
+						cursor--;
+						writeRaw('\x1b[D');
+					}
+					i += 3;
+					continue;
+				}
+				if (data.startsWith('\x1b[C', i)) {
+					if (cursor < line.length) {
+						cursor++;
+						writeRaw('\x1b[C');
+					}
+					i += 3;
+					continue;
+				}
+				if (data.startsWith('\x1b[H', i) || data.startsWith('\x1b[1~', i)) {
+					if (cursor > 0) {
+						writeRaw(`\x1b[${cursor}D`);
+						cursor = 0;
+					}
+					i += data.startsWith('\x1b[H', i) ? 3 : 4;
+					continue;
+				}
+				if (data.startsWith('\x1b[F', i) || data.startsWith('\x1b[4~', i)) {
+					if (cursor < line.length) {
+						writeRaw(`\x1b[${line.length - cursor}C`);
+						cursor = line.length;
+					}
+					i += data.startsWith('\x1b[F', i) ? 3 : 4;
+					continue;
+				}
+				if (data.startsWith('\x1b[3~', i)) {
+					if (cursor < line.length) {
+						const prevLen = line.length;
+						line = line.slice(0, cursor) + line.slice(cursor + 1);
+						redrawLine(prevLen);
+					}
+					i += 4;
+					continue;
+				}
+
+				const ch = data[i];
+				const code = ch.charCodeAt(0);
+				i++;
+
+				if (ch === '\r' || ch === '\n') {
+					const toRun = line;
+					line = '';
+					cursor = 0;
+					writeRaw('\r\n');
+					void executeLine(toRun);
+					if (ch === '\r' && data[i] === '\n') i++;
+				} else if (ch === '\x7f' || ch === '\b') {
+					if (cursor > 0) {
+						const prevLen = line.length;
+						line = line.slice(0, cursor - 1) + line.slice(cursor);
+						cursor--;
+						redrawLine(prevLen);
+					}
+				} else if (ch === '\x03') {
+					line = '';
+					cursor = 0;
+					writeRaw('^C\r\n');
+					renderPrompt();
+				} else if (ch === '\x04') {
+					if (line.length === 0) {
+						exited = true;
+						updateSession(tab.id, { status: 'exited', exitCode: 0 });
+						writeRaw('exit\r\n[Session exited with code 0]\r\n');
+						return;
+					}
+				} else if (ch === '\x0c') {
+					tab.term.clear();
+					redrawLine(line.length);
+				} else if (ch === '\x15') {
+					const prevLen = line.length;
+					line = '';
+					cursor = 0;
+					redrawLine(prevLen);
+				} else if (ch === '\x01') {
+					if (cursor > 0) {
+						writeRaw(`\x1b[${cursor}D`);
+						cursor = 0;
+					}
+				} else if (ch === '\x05') {
+					if (cursor < line.length) {
+						writeRaw(`\x1b[${line.length - cursor}C`);
+						cursor = line.length;
+					}
+				} else if (code >= 0x20 || ch === '\t') {
+					const insert = ch === '\t' ? '  ' : ch;
+					const prevLen = line.length;
+					line = line.slice(0, cursor) + insert + line.slice(cursor);
+					cursor += insert.length;
+					if (cursor === line.length) {
+						writeRaw(insert);
+					} else {
+						redrawLine(prevLen);
+					}
+				}
+			}
+		}
+
+		const dataDisposable = tab.term.onData(handleData);
+		tab.disposables.push(dataDisposable);
+
+		writeRaw('WebVM secondary shell session (type "help" for built-ins)\r\n');
+		renderPrompt();
+
+		return {
+			reset() {
+				exited = false;
+				busy = false;
+				line = '';
+				cursor = 0;
+				updateSession(tab.id, { status: 'running', exitCode: null });
+				tab.term.clear();
+				writeRaw('Session restarted.\r\n');
+				renderPrompt();
+			},
+			sendInput(str) {
+				handleData(str);
+			}
+		};
+	}
+
+	function createTerminalInstance(tabId, kind, sessionOpts = {}) {
+		if (!TerminalCtor || !consoleRoot) return null;
+
+		const hiddenOrSaver = (typeof document !== 'undefined' && document.hidden) || currentSettings.powerSaver;
+		const term = new TerminalCtor({
+			cursorBlink: hiddenOrSaver ? false : currentSettings.cursorBlink,
+			convertEol: true,
+			fontFamily: currentSettings.fontFamily,
+			fontWeight: 400,
+			fontWeightBold: 700,
+			fontSize: currentSettings.fontSize,
+			scrollback: currentSettings.scrollback,
+			theme: getThemeDefinition(currentSettings.theme)
+		});
+
+		const fitAddon = FitAddonCtor ? new FitAddonCtor() : null;
+		const linkAddon = WebLinksAddonCtor ? new WebLinksAddonCtor() : null;
+		const searchAddon = SearchAddonCtor ? new SearchAddonCtor() : null;
+
+		if (fitAddon) term.loadAddon(fitAddon);
+		if (linkAddon) term.loadAddon(linkAddon);
+		if (searchAddon) term.loadAddon(searchAddon);
+
+		const hostEl = document.createElement('div');
+		hostEl.className = 'w-full h-full';
+		hostEl.dataset.sessionId = tabId;
+		consoleRoot.appendChild(hostEl);
+
+		term.open(hostEl);
+		term.scrollToTop();
+		if (fitAddon) {
+			try {
+				fitAddon.fit();
+			} catch {
+				// Ignore zero-size container on initial mount
+			}
+		}
+
+		const batcher = createTerminalBatcher(term, {
+			isHidden: () => typeof document !== 'undefined' && Boolean(document.hidden)
+		});
+
+		const osc52Disposer = registerOsc52Handler(term, {
+			onCopy: async (text) => {
+				if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+					try {
+						await navigator.clipboard.writeText(text);
+						addToast({ message: 'Copied to clipboard (OSC-52)', type: 'success' });
+					} catch {
+						addToast({ message: 'Clipboard write blocked by browser', type: 'warning' });
+					}
+				}
+			}
+		});
+
+		const disposables = [osc52Disposer];
+		if (searchAddon?.onDidChangeResults) {
+			disposables.push(
+				searchAddon.onDidChangeResults((ev) => {
+					if (get(activeSessionId) === tabId) {
+						notifySearchChange({
+							resultIndex: ev?.resultIndex ?? -1,
+							resultCount: ev?.resultCount ?? 0
+						});
+					}
+				})
+			);
+		}
+
+		const tab = {
+			id: tabId,
+			kind,
+			term,
+			hostEl,
+			fitAddon,
+			linkAddon,
+			searchAddon,
+			webglAddon: null,
+			batcher,
+			disposables,
+			cwd: sessionOpts.cwd || configObj?.opts?.cwd || '/home/user',
+			env: Array.isArray(sessionOpts.env)
+				? [...sessionOpts.env]
+				: [...(configObj?.opts?.env || ['HOME=/home/user', 'TERM=xterm', 'USER=user', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'])],
+			cmd: sessionOpts.cmd || '/bin/sh',
+			args: Array.isArray(sessionOpts.args) ? [...sessionOpts.args] : [],
+			uid: sessionOpts.uid ?? configObj?.opts?.uid,
+			gid: sessionOpts.gid ?? configObj?.opts?.gid,
+			shellController: null
+		};
+
+		tabs.set(tabId, tab);
+
+		if (kind === 'primary') {
+			disposables.push(
+				term.onData((data) => inputWriter.write(data)),
+				term.onBinary((data) => inputWriter.sendBinary(data)),
+				term.onResize(({ cols, rows }) => syncPrimaryPtySize(cols, rows))
+			);
+		} else if (kind === 'shell') {
+			tab.shellController = attachShellController(tab);
+		}
+
+		upsertSession({
+			id: tabId,
+			title: sessionOpts.title || (kind === 'primary' ? (configObj?.cmd === '/sbin/init' ? 'init' : 'bash') : tabId),
+			kind,
+			status: sessionOpts.status || (kind === 'primary' ? 'starting' : 'running'),
+			exitCode: null,
+			cmd: tab.cmd,
+			args: tab.args,
+			cwd: tab.cwd,
+			env: [...tab.env],
+			cols: term.cols || 80,
+			rows: term.rows || 24
+		});
+
+		return tab;
+	}
+
+	function showTabContainer(targetId) {
+		for (const [id, tab] of tabs.entries()) {
+			tab.hostEl.style.display = id === targetId ? 'block' : 'none';
+		}
+	}
+
+	function switchTab(id) {
+		if (disposed || !tabs.has(id)) return;
+		setActiveSession(id);
+		showTabContainer(id);
+		const tab = tabs.get(id);
+		if (tab.fitAddon) {
+			try {
+				tab.fitAddon.fit();
+				updateSession(id, { cols: tab.term.cols, rows: tab.term.rows });
+			} catch {
+				// Ignore
+			}
+		}
+		syncWebglForActiveTab();
+		if (get(activeVt) === 1) {
+			tab.term.focus();
+		}
+		notifySearchChange({ resultIndex: -1, resultCount: 0 });
+	}
+
+	function createShellTab(opts = {}) {
+		if (disposed) return null;
+		const currentList = get(sessions);
+		if (currentList.length >= MAX_SESSIONS) {
+			addToast({ message: `Maximum of ${MAX_SESSIONS} terminal tabs reached`, type: 'warning' });
+			return null;
+		}
+		tabSeq++;
+		const id = opts.id || `tab-${tabSeq}`;
+		const title = opts.title || `shell-${tabSeq - 1}`;
+		const tab = createTerminalInstance(id, 'shell', {
+			title,
+			cwd: opts.cwd || configObj?.opts?.cwd || '/home/user',
+			env: opts.env,
+			status: 'running'
+		});
+		if (!tab) return null;
+		switchTab(id);
+		return id;
+	}
+
+	async function runSession({ title, cmd, args = [], cwd, env, uid, gid } = {}) {
+		if (disposed || !cmd) return { status: 1 };
+		const currentList = get(sessions);
+		if (currentList.length >= MAX_SESSIONS) {
+			addToast({ message: `Maximum of ${MAX_SESSIONS} terminal tabs reached`, type: 'warning' });
+			return { status: 1 };
+		}
+		tabSeq++;
+		const id = `task-${tabSeq}`;
+		const tab = createTerminalInstance(id, 'task', {
+			title: title || cmd.split('/').pop() || `task-${tabSeq}`,
+			cmd,
+			args,
+			cwd: cwd || configObj?.opts?.cwd || '/home/user',
+			env,
+			uid,
+			gid,
+			status: 'running'
+		});
+		if (!tab) return { status: 1 };
+		switchTab(id);
+		tab.batcher.writeText(`$ ${cmd} ${args.join(' ')}\r\n`);
+
+		if (!cx) {
+			updateSession(id, { status: 'error', exitCode: 1 });
+			tab.batcher.writeText('[VM is not initialized]\r\n');
+			return { status: 1 };
+		}
+
+		try {
+			const res = await runSerializedCommand(id, () =>
+				cx.run(cmd, args, {
+					cwd: tab.cwd,
+					env: tab.env,
+					uid: tab.uid,
+					gid: tab.gid
+				})
+			);
+			const code = typeof res?.status === 'number' ? res.status : 0;
+			updateSession(id, {
+				status: code === 0 ? 'exited' : 'error',
+				exitCode: code
+			});
+			tab.batcher.writeText(`\r\n[Task exited with code ${code}]\r\n`);
+			return { status: code };
+		} catch (err) {
+			updateSession(id, { status: 'error', exitCode: 1 });
+			tab.batcher.writeText(`\r\n[Task failed: ${err?.message || err}]\r\n`);
+			return { status: 1 };
+		}
+	}
+
+	function renameTab(id, nextTitle) {
+		const trimmed = String(nextTitle || '').trim();
+		if (!trimmed) return;
+		updateSession(id, { title: trimmed.slice(0, 32) });
+	}
+
+	function closeTab(id) {
+		const tab = tabs.get(id);
+		if (!tab || tab.kind === 'primary') return;
+
+		if (activeRunTabId === id) {
+			activeRunTabId = null;
+		}
+
+		for (const d of tab.disposables) {
+			try {
+				d?.dispose?.();
+			} catch {
+				// Ignore
+			}
+		}
+		try {
+			tab.webglAddon?.dispose?.();
+		} catch {
+			// Ignore
+		}
+		try {
+			tab.batcher?.dispose?.();
+		} catch {
+			// Ignore
+		}
+		try {
+			tab.term?.dispose?.();
+		} catch {
+			// Ignore
+		}
+		tab.hostEl?.remove();
+		tabs.delete(id);
+
+		removeSession(id);
+		const nextActive = get(activeSessionId) || 'tab-1';
+		if (tabs.has(nextActive)) {
+			showTabContainer(nextActive);
+			syncWebglForActiveTab();
+			tabs.get(nextActive)?.fitAddon?.fit();
+		}
+	}
+
+	async function restartTab(id) {
+		const tab = tabs.get(id);
+		if (!tab || disposed) return;
+		if (tab.kind === 'shell' && tab.shellController) {
+			tab.shellController.reset();
+			return;
+		}
+		if (tab.kind === 'task') {
+			updateSession(id, { status: 'running', exitCode: null });
+			tab.batcher.writeText(`\r\n[Restarting ${tab.cmd}...]\r\n`);
+			if (!cx) {
+				updateSession(id, { status: 'error', exitCode: 1 });
+				tab.batcher.writeText('[VM is not initialized]\r\n');
+				return;
+			}
+			try {
+				const res = await runSerializedCommand(id, () =>
+					cx.run(tab.cmd, tab.args, { cwd: tab.cwd, env: tab.env, uid: tab.uid, gid: tab.gid })
+				);
+				const code = typeof res?.status === 'number' ? res.status : 0;
+				updateSession(id, { status: code === 0 ? 'exited' : 'error', exitCode: code });
+				tab.batcher.writeText(`\r\n[Task exited with code ${code}]\r\n`);
+			} catch (err) {
+				updateSession(id, { status: 'error', exitCode: 1 });
+				tab.batcher.writeText(`\r\n[Task failed: ${err?.message || err}]\r\n`);
+			}
+			return;
+		}
+		if (tab.kind === 'primary') {
+			if (!cx) {
+				await initCheerpX();
+			} else {
+				addToast({ message: 'Primary session auto-restarts on exit', type: 'info' });
+			}
+		}
+	}
+
+	function sendInputToActive(str) {
+		if (disposed || !str) return;
+		const tab = getActiveTab();
+		if (!tab) return;
+		if (tab.kind === 'primary') {
+			inputWriter.write(str);
+		} else if (tab.shellController) {
+			tab.shellController.sendInput(str);
+		}
+	}
+
+	function search(query, opts = {}) {
+		const tab = getActiveTab();
+		const searchAddon = tab?.searchAddon;
+		if (!searchAddon) return false;
+		if (!query) {
+			searchAddon.clearDecorations();
+			notifySearchChange({ resultIndex: -1, resultCount: 0 });
+			return false;
+		}
+		const searchOpts = {
+			caseSensitive: Boolean(opts.caseSensitive),
+			regex: Boolean(opts.regex),
+			wholeWord: Boolean(opts.wholeWord),
+			incremental: opts.incremental !== false,
+			decorations: SEARCH_DECORATIONS
+		};
+		try {
+			if (opts.direction === 'previous') {
+				return searchAddon.findPrevious(query, searchOpts);
+			}
+			return searchAddon.findNext(query, searchOpts);
+		} catch {
+			// Invalid regex or search error
+			return false;
+		}
+	}
+
+	function clearSearch() {
+		const tab = getActiveTab();
+		tab?.searchAddon?.clearDecorations();
+		notifySearchChange({ resultIndex: -1, resultCount: 0 });
+	}
+
+	async function copySelection() {
+		if (get(activeVt) === 7) {
+			addToast({
+				message: 'Use Ctrl+C inside the graphical desktop, or Paste to send host text to X11',
+				type: 'info'
+			});
+			return false;
+		}
+		const term = getActiveTerminal();
+		const sel = term?.getSelection?.() || '';
+		if (!sel) {
+			addToast({ message: 'No text selected in terminal', type: 'info' });
+			return false;
+		}
+		try {
+			if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+				await navigator.clipboard.writeText(sel);
+				addToast({ message: 'Copied selection to clipboard', type: 'success' });
+				return true;
+			}
+		} catch {
+			addToast({ message: 'Clipboard copy denied by browser', type: 'warning' });
+		}
+		return false;
+	}
+
+	async function pasteClipboard(fallbackText = null) {
+		let text = fallbackText;
+		if (text == null) {
+			try {
+				if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+					text = await navigator.clipboard.readText();
+				}
+			} catch {
+				addToast({
+					message: 'Clipboard read blocked — use Ctrl+V / Shift+Insert in terminal',
+					type: 'warning'
+				});
+				return false;
+			}
+		}
+		if (!text) return false;
+
+		if (get(activeVt) === 7) {
+			const ok = await sendTextToKms(text);
+			addToast({
+				message: ok ? 'Pasted text into X11 display' : 'X11 display input not ready',
+				type: ok ? 'success' : 'warning'
+			});
+			return ok;
+		}
+
+		const term = getActiveTerminal();
+		if (term?.paste) {
+			term.paste(text);
+		} else {
+			sendInputToActive(text);
+		}
+		return true;
+	}
+
+	async function createBlockDevice(CheerpX) {
+		switch (configObj.diskImageType) {
+			case 'cloud':
+				try {
+					return await CheerpX.CloudDevice.create(configObj.diskImageUrl);
+				} catch (e) {
+					const wssProtocol = 'wss:';
+					if (configObj.diskImageUrl?.startsWith(wssProtocol)) {
+						tryPlausible('WS Disk failure');
+						return await CheerpX.CloudDevice.create(
+							'https:' + configObj.diskImageUrl.slice(wssProtocol.length)
+						);
+					}
+					throw e;
+				}
+			case 'bytes':
+				return await CheerpX.HttpBytesDevice.create(configObj.diskImageUrl);
+			case 'github':
+				return await CheerpX.GitHubDevice.create(configObj.diskImageUrl);
+			default:
+				throw new Error('Unrecognized device type');
+		}
+	}
+
+	async function runPrimaryLoop(gen) {
+		if (!cx) return;
+		while (!disposed && primaryBootGen === gen) {
+			updateSession('tab-1', { status: 'running', exitCode: null });
+			try {
+				const res = await cx.run(configObj.cmd, configObj.args, configObj.opts);
+				if (disposed || primaryBootGen !== gen) break;
+				const code = typeof res?.status === 'number' ? res.status : 0;
+				updateSession('tab-1', { status: 'exited', exitCode: code });
+				tabs.get('tab-1')?.batcher?.writeText(
+					`\r\n[Process exited with code ${code} — restarting...]\r\n`
+				);
+			} catch (err) {
+				if (disposed || primaryBootGen !== gen) break;
+				updateSession('tab-1', { status: 'error', exitCode: 1 });
+				tabs.get('tab-1')?.batcher?.writeText(`\r\n[Process error: ${err?.message || err}]\r\n`);
+				break;
+			}
+		}
+	}
+
+	async function initCheerpX(cheerpxImportPromise = null) {
+		if (disposed) return;
+		const gen = ++primaryBootGen;
+		const primaryTab = tabs.get('tab-1');
+		try {
+			bootState.set({
+				phase: 'runtime',
+				progress: 20,
+				message: 'Loading CheerpX virtualization runtime...',
+				ready: false,
+				error: null
+			});
+			const CheerpX = CheerpXMod || (await (cheerpxImportPromise || import('@leaningtech/cheerpx')));
+			CheerpXMod = CheerpX;
+			if (disposed) return;
+
+			bootState.set({
+				phase: 'devices',
+				progress: 40,
+				message: 'Initializing disk & filesystem devices...',
+				ready: false,
+				error: null
+			});
+
+			const [blockDevice, createdCache, webDevice, documentsDevice, dataDevice] = await Promise.all([
+				createBlockDevice(CheerpX),
+				CheerpX.IDBDevice.create(cacheId),
+				CheerpX.WebDevice.create(''),
+				CheerpX.WebDevice.create('documents'),
+				CheerpX.DataDevice.create()
+			]);
+			if (disposed) return;
+
+			blockCache = createdCache;
+			bootState.set({
+				phase: 'overlay',
+				progress: 70,
+				message: 'Mounting Linux root filesystem...',
+				ready: false,
+				error: null
+			});
+
+			const overlayDevice = await CheerpX.OverlayDevice.create(blockDevice, blockCache);
+			if (disposed) return;
+
+			const mountPoints = [
+				{ type: 'ext2', dev: overlayDevice, path: '/' },
+				{ type: 'dir', dev: webDevice, path: '/web' },
+				{ type: 'dir', dev: dataDevice, path: '/data' },
+				{ type: 'devs', path: '/dev' },
+				{ type: 'devpts', path: '/dev/pts' },
+				{ type: 'proc', path: '/proc' },
+				{ type: 'sys', path: '/sys' },
+				{ type: 'dir', dev: documentsDevice, path: '/home/user/documents' }
+			];
+
+			bootState.set({
+				phase: 'linux',
+				progress: 85,
+				message: 'Creating Linux environment...',
+				ready: false,
+				error: null
+			});
+
+			try {
+				cx = await CheerpX.Linux.create({
+					mounts: mountPoints,
+					networkInterface
+				});
+			} catch (e) {
+				primaryTab?.batcher?.printMessage(errorMessage);
+				primaryTab?.batcher?.printMessage([String(e)]);
+				updateSession('tab-1', { status: 'error', exitCode: 1 });
+				vmState.set('error');
+				bootState.set({
+					phase: 'error',
+					progress: 0,
+					message: e?.message || String(e),
+					ready: false,
+					error: e?.message || String(e)
+				});
+				return;
+			}
+
+			if (disposed) {
+				try {
+					cx.delete?.();
+				} catch {
+					// Ignore
+				}
+				return;
+			}
+
+			cx.registerCallback('cpuActivity', telemetry.cpuCallback);
+			cx.registerCallback('diskActivity', telemetry.hddCallback);
+			cx.registerCallback('diskLatency', telemetry.latencyCallback);
+			cx.registerCallback('processCreated', handleProcessCreated);
+
+			primaryTab?.term?.scrollToBottom();
+			const cols = primaryTab?.term?.cols || 80;
+			const rows = primaryTab?.term?.rows || 24;
+			lastPtyCols = cols;
+			lastPtyRows = rows;
+			cxReadFunc = cx.setCustomConsole(routeWriteData, cols, rows);
+
+			if (displayEl && configObj?.needsDisplay) {
+				applyDisplayScale(true);
+				cx.setActivateConsole(handleActivateConsole);
+			}
+
+			vmState.set('ready');
+			bootState.set({
+				phase: 'ready',
+				progress: 100,
+				message: 'System ready',
+				ready: true,
+				error: null
+			});
+
+			void runPrimaryLoop(gen);
+		} catch (e) {
+			if (disposed) return;
+			primaryTab?.batcher?.printMessage(unexpectedErrorMessage);
+			primaryTab?.batcher?.printMessage([String(e)]);
+			updateSession('tab-1', { status: 'error', exitCode: 1 });
+			vmState.set('error');
+			bootState.set({
+				phase: 'error',
+				progress: 0,
+				message: e?.message || String(e),
+				ready: false,
+				error: e?.message || String(e)
+			});
+		}
+	}
+
+	async function boot({ consoleElement, displayElement = null } = {}) {
+		if (disposed) return;
+		consoleRoot = consoleElement;
+		displayEl = displayElement;
+
+		resetSessionsStore();
+		vtAvailable.set(Boolean(configObj?.needsDisplay));
+		activeVt.set(1);
+		vmState.set('booting');
+		bootState.set({
+			phase: 'imports',
+			progress: 10,
+			message: 'Loading terminal & virtualization modules...',
+			ready: false,
+			error: null
+		});
+
+		const loadDynamicDeps = options.loadDeps
+			? options.loadDeps()
+			: Promise.allSettled([
+					TerminalCtor ? Promise.resolve({ Terminal: TerminalCtor }) : import('@xterm/xterm'),
+					FitAddonCtor ? Promise.resolve({ FitAddon: FitAddonCtor }) : import('@xterm/addon-fit'),
+					WebLinksAddonCtor
+						? Promise.resolve({ WebLinksAddon: WebLinksAddonCtor })
+						: import('@xterm/addon-web-links'),
+					SearchAddonCtor
+						? Promise.resolve({ SearchAddon: SearchAddonCtor })
+						: import('@xterm/addon-search'),
+					WebglAddonCtor
+						? Promise.resolve({ WebglAddon: WebglAddonCtor })
+						: import('@xterm/addon-webgl'),
+					CheerpXMod ? Promise.resolve(CheerpXMod) : import('@leaningtech/cheerpx')
+				]);
+
+		const cheerpxPromise = options.loadDeps
+			? loadDynamicDeps.then((r) => r.CheerpX)
+			: loadDynamicDeps.then((results) => {
+					const cxRes = results[5];
+					if (cxRes.status === 'rejected') throw cxRes.reason;
+					return cxRes.value;
+				});
+
+		const depResults = await loadDynamicDeps;
+		if (disposed) return;
+
+		if (options.loadDeps) {
+			TerminalCtor = depResults.Terminal;
+			FitAddonCtor = depResults.FitAddon;
+			WebLinksAddonCtor = depResults.WebLinksAddon;
+			SearchAddonCtor = depResults.SearchAddon;
+			WebglAddonCtor = depResults.WebglAddon;
+			CheerpXMod = depResults.CheerpX || null;
+		} else {
+			if (depResults[0].status === 'fulfilled') TerminalCtor = depResults[0].value.Terminal;
+			if (depResults[1].status === 'fulfilled') FitAddonCtor = depResults[1].value.FitAddon;
+			if (depResults[2].status === 'fulfilled') WebLinksAddonCtor = depResults[2].value.WebLinksAddon;
+			if (depResults[3].status === 'fulfilled') SearchAddonCtor = depResults[3].value.SearchAddon;
+			if (depResults[4].status === 'fulfilled') WebglAddonCtor = depResults[4].value.WebglAddon;
+			if (depResults[5].status === 'fulfilled') CheerpXMod = depResults[5].value;
+		}
+
+		const primaryTab = createTerminalInstance('tab-1', 'primary', {
+			title: configObj?.cmd === '/sbin/init' ? 'init' : 'bash',
+			cmd: configObj?.cmd || '/bin/bash',
+			args: configObj?.args || [],
+			status: 'starting'
+		});
+		setActiveSession('tab-1');
+		showTabContainer('tab-1');
+		syncWebglForActiveTab();
+		primaryTab?.term?.focus();
+
+		if (configObj?.printIntro && primaryTab?.batcher) {
+			primaryTab.batcher.printMessage(introMessage);
+		}
+
+		if (typeof ResizeObserver !== 'undefined' && consoleRoot) {
+			resizeObserver = new ResizeObserver(() => scheduleResize());
+			resizeObserver.observe(consoleRoot);
+			if (displayEl) resizeObserver.observe(displayEl);
+		}
+
+		if (typeof window !== 'undefined') {
+			window.addEventListener('resize', scheduleResize);
+			cleanups.push(() => window.removeEventListener('resize', scheduleResize));
+		}
+
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange);
+			cleanups.push(() => document.removeEventListener('visibilitychange', handleVisibilityChange));
+		}
+
+		const unsubSettings = settings.subscribe(applyTerminalSettings);
+		cleanups.push(unsubSettings);
+
+		const unsubDisplayPaused = displayPaused.subscribe((paused) => {
+			if (!paused) {
+				applyDisplayScale(true);
+			}
+		});
+		cleanups.push(unsubDisplayPaused);
+
+		await initCheerpX(cheerpxPromise);
+	}
+
+	function setDisplayElement(el) {
+		displayEl = el;
+	}
+
+	async function resetDisk() {
+		if (!blockCache) return false;
+		await blockCache.reset();
+		if (typeof location !== 'undefined') {
+			location.reload();
+		}
+		return true;
+	}
+
+	function networkLogin() {
+		cx?.networkLogin?.();
+	}
+
+	function onSearchResultsChange(cb) {
+		searchListeners.add(cb);
+		return () => searchListeners.delete(cb);
+	}
+
+	function dispose() {
+		if (disposed) return;
+		disposed = true;
+		vmState.set('disposed');
+
+		if (resizeTimerId !== null) {
+			clearTimeout(resizeTimerId);
+			resizeTimerId = null;
+		}
+		if (resizeRafId !== null && typeof cancelAnimationFrame === 'function') {
+			cancelAnimationFrame(resizeRafId);
+			resizeRafId = null;
+		}
+		if (resizeObserver) {
+			resizeObserver.disconnect();
+			resizeObserver = null;
+		}
+
+		while (cleanups.length > 0) {
+			const fn = cleanups.pop();
+			try {
+				fn();
+			} catch {
+				// Ignore
+			}
+		}
+
+		inputWriter.dispose();
+		telemetry.dispose();
+
+		if (cx) {
+			try {
+				cx.unregisterCallback?.('cpuActivity', telemetry.cpuCallback);
+				cx.unregisterCallback?.('diskActivity', telemetry.hddCallback);
+				cx.unregisterCallback?.('diskLatency', telemetry.latencyCallback);
+				cx.unregisterCallback?.('processCreated', handleProcessCreated);
+			} catch {
+				// Ignore
+			}
+			try {
+				cx.delete?.();
+			} catch {
+				// Ignore
+			}
+			cx = null;
+		}
+
+		for (const tab of tabs.values()) {
+			for (const d of tab.disposables) {
+				try {
+					d?.dispose?.();
+				} catch {
+					// Ignore
+				}
+			}
+			try {
+				tab.webglAddon?.dispose?.();
+			} catch {
+				// Ignore
+			}
+			try {
+				tab.batcher?.dispose?.();
+			} catch {
+				// Ignore
+			}
+			try {
+				tab.term?.dispose?.();
+			} catch {
+				// Ignore
+			}
+			tab.hostEl?.remove();
+		}
+		tabs.clear();
+		searchListeners.clear();
+	}
+
+	return {
+		boot,
+		setDisplayElement,
+		createShellTab,
+		runSession,
+		switchTab,
+		renameTab,
+		closeTab,
+		restartTab,
+		setActiveVt,
+		toggleVt: () => setActiveVt(get(activeVt) === 7 ? 1 : 7),
+		toggleDisplayPause: () => displayPaused.update((v) => !v),
+		applyDisplayScale,
+		scheduleResize,
+		sendInputToActive,
+		search,
+		clearSearch,
+		onSearchResultsChange,
+		copySelection,
+		pasteClipboard,
+		resetDisk,
+		networkLogin,
+		getActiveTerminal,
+		getCheerpX: () => cx,
+		getBlockCache: () => blockCache,
+		getTelemetry: () => telemetry,
+		dispose
+	};
+}
