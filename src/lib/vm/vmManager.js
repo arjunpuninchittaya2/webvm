@@ -109,6 +109,68 @@ export async function sendTextToKms(text) {
 	return true;
 }
 
+const KMS_SEQ_MAP = {
+	'\x1b': { key: 'Escape', code: 'Escape' },
+	'\t': { key: 'Tab', code: 'Tab' },
+	'\r': { key: 'Enter', code: 'Enter' },
+	'\n': { key: 'Enter', code: 'Enter' },
+	'\x7f': { key: 'Backspace', code: 'Backspace' },
+	'\b': { key: 'Backspace', code: 'Backspace' },
+	'\x1b[A': { key: 'ArrowUp', code: 'ArrowUp' },
+	'\x1b[B': { key: 'ArrowDown', code: 'ArrowDown' },
+	'\x1b[C': { key: 'ArrowRight', code: 'ArrowRight' },
+	'\x1b[D': { key: 'ArrowLeft', code: 'ArrowLeft' },
+	'\x1b[H': { key: 'Home', code: 'Home' },
+	'\x1b[F': { key: 'End', code: 'End' },
+	'\x1b[3~': { key: 'Delete', code: 'Delete' },
+	'\x1b[5~': { key: 'PageUp', code: 'PageUp' },
+	'\x1b[6~': { key: 'PageDown', code: 'PageDown' },
+	'\x1bOP': { key: 'F1', code: 'F1' },
+	'\x1bOQ': { key: 'F2', code: 'F2' },
+	'\x1bOR': { key: 'F3', code: 'F3' },
+	'\x1bOS': { key: 'F4', code: 'F4' },
+	'\x1b[15~': { key: 'F5', code: 'F5' },
+	'\x1b[17~': { key: 'F6', code: 'F6' },
+	'\x1b[18~': { key: 'F7', code: 'F7' },
+	'\x1b[19~': { key: 'F8', code: 'F8' },
+	'\x1b[20~': { key: 'F9', code: 'F9' },
+	'\x1b[21~': { key: 'F10', code: 'F10' },
+	'\x1b[23~': { key: 'F11', code: 'F11' },
+	'\x1b[24~': { key: 'F12', code: 'F12' }
+};
+
+export function sendKeySequenceToKms(seq) {
+	const textArea = getKmsInputElement();
+	if (!textArea || !seq) return false;
+
+	const mapped = KMS_SEQ_MAP[seq];
+	if (mapped) {
+		textArea.dispatchEvent(new KeyboardEvent('keydown', { ...mapped, bubbles: true }));
+		textArea.dispatchEvent(new KeyboardEvent('keyup', { ...mapped, bubbles: true }));
+		return true;
+	}
+
+	if (seq.length === 1) {
+		const code = seq.charCodeAt(0);
+		if (code >= 1 && code <= 26) {
+			const letter = String.fromCharCode(code + 96);
+			textArea.dispatchEvent(new KeyboardEvent('keydown', { key: letter, ctrlKey: true, bubbles: true }));
+			textArea.dispatchEvent(new KeyboardEvent('keyup', { key: letter, ctrlKey: true, bubbles: true }));
+			return true;
+		}
+	}
+
+	if (seq.length === 2 && seq[0] === '\x1b') {
+		const ch = seq[1];
+		textArea.dispatchEvent(new KeyboardEvent('keydown', { key: ch, altKey: true, bubbles: true }));
+		textArea.dispatchEvent(new KeyboardEvent('keyup', { key: ch, altKey: true, bubbles: true }));
+		return true;
+	}
+
+	void sendTextToKms(seq);
+	return true;
+}
+
 export function createVmManager(configObj, options = {}) {
 	const cacheId = options.cacheId || 'blocks_terminal';
 	const workspaceCacheId = options.workspaceCacheId || 'workspace';
@@ -195,10 +257,21 @@ export function createVmManager(configObj, options = {}) {
 	function handleActivateConsole(vt) {
 		if (disposed) return;
 		const normalized = vt === 7 ? 7 : 1;
-		if (get(activeVt) === normalized) return;
-		activeVt.set(normalized);
+		const changed = get(activeVt) !== normalized;
+		if (changed) {
+			activeVt.set(normalized);
+		}
 		if (normalized === 7) {
-			tryPlausible('Display activated');
+			if (changed) {
+				tryPlausible('Display activated');
+			}
+			if (displayEl) {
+				applyDisplayScale(true);
+				getKmsInputElement()?.focus();
+			}
+		} else {
+			getActiveTerminal()?.focus();
+			scheduleResize();
 		}
 	}
 
@@ -212,6 +285,17 @@ export function createVmManager(configObj, options = {}) {
 			applyDisplayScale(true);
 			getKmsInputElement()?.focus();
 		}
+	}
+
+	function focusDisplay() {
+		if (disposed || !configObj?.needsDisplay) return false;
+		const textArea = getKmsInputElement();
+		if (textArea) {
+			textArea.focus();
+			return true;
+		}
+		displayEl?.focus?.();
+		return false;
 	}
 
 	function syncPrimaryPtySize(cols, rows) {
@@ -996,6 +1080,12 @@ export function createVmManager(configObj, options = {}) {
 			);
 		}
 
+		const baseEnv = [...(configObj?.opts?.env || ['HOME=/home/user', 'TERM=xterm', 'USER=user', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'])];
+		const resolvedEnv = Array.isArray(sessionOpts.env) ? [...sessionOpts.env] : baseEnv;
+		if (configObj?.needsDisplay && !resolvedEnv.some((e) => e.startsWith('DISPLAY='))) {
+			resolvedEnv.push('DISPLAY=:0');
+		}
+
 		const tab = {
 			id: tabId,
 			kind,
@@ -1008,9 +1098,7 @@ export function createVmManager(configObj, options = {}) {
 			batcher,
 			disposables,
 			cwd: sessionOpts.cwd || configObj?.opts?.cwd || '/home/user',
-			env: Array.isArray(sessionOpts.env)
-				? [...sessionOpts.env]
-				: [...(configObj?.opts?.env || ['HOME=/home/user', 'TERM=xterm', 'USER=user', 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'])],
+			env: resolvedEnv,
 			cmd: sessionOpts.cmd || '/bin/sh',
 			args: Array.isArray(sessionOpts.args) ? [...sessionOpts.args] : [],
 			uid: sessionOpts.uid ?? configObj?.opts?.uid,
@@ -1153,9 +1241,13 @@ export function createVmManager(configObj, options = {}) {
 	}
 
 	function backgroundOpts() {
+		const env = Array.isArray(configObj?.opts?.env) ? [...configObj.opts.env] : [];
+		if (configObj?.needsDisplay && !env.some((e) => e.startsWith('DISPLAY='))) {
+			env.push('DISPLAY=:0');
+		}
 		return {
 			cwd: configObj?.opts?.cwd || '/home/user',
-			env: configObj?.opts?.env,
+			env: env.length > 0 ? env : configObj?.opts?.env,
 			uid: configObj?.opts?.uid,
 			gid: configObj?.opts?.gid
 		};
@@ -1289,6 +1381,10 @@ export function createVmManager(configObj, options = {}) {
 
 	function sendInputToActive(str) {
 		if (disposed || !str) return;
+		if (get(activeVt) === 7 && configObj?.needsDisplay) {
+			sendKeySequenceToKms(str);
+			return;
+		}
 		const tab = getActiveTab();
 		if (!tab) return;
 		if (tab.kind === 'primary') {
@@ -1736,8 +1832,12 @@ export function createVmManager(configObj, options = {}) {
 
 	async function runCommandInTerminal(commandStr, { newTab = false, title = 'run', cwd = '/home/user/workspace' } = {}) {
 		if (disposed || !commandStr) return { status: 1 };
-		setActiveVt(1);
-		if (newTab && cx) {
+		const isInitPrimary = configObj?.cmd === '/sbin/init';
+		if (!isInitPrimary) {
+			setActiveVt(1);
+		}
+		if ((newTab || isInitPrimary) && cx) {
+			setActiveVt(1);
 			return await runSession({
 				title,
 				cmd: '/bin/sh',
@@ -1745,9 +1845,10 @@ export function createVmManager(configObj, options = {}) {
 				cwd
 			});
 		}
+		setActiveVt(1);
 		let active = getActiveTab();
 		if (!active || active.kind === 'task') {
-			if (tabs.has('tab-1')) {
+			if (tabs.has('tab-1') && !isInitPrimary) {
 				switchTab('tab-1');
 				active = tabs.get('tab-1');
 			} else {
@@ -1865,6 +1966,7 @@ export function createVmManager(configObj, options = {}) {
 		restartTab,
 		setActiveVt,
 		toggleVt: () => setActiveVt(get(activeVt) === 7 ? 1 : 7),
+		focusDisplay,
 		toggleDisplayPause: () => displayPaused.update((v) => !v),
 		applyDisplayScale,
 		scheduleResize,

@@ -115,7 +115,7 @@ Fork the WebVM repository to deploy your own version to GitHub Pages:
 
 <img src="/assets/result.png" width="70%">
 
-The same `Deploy` workflow also builds custom `.ext2` disk images from a Dockerfile. You can point it at `dockerfiles/debian_mini` or another Dockerfile, then either publish the result as a GitHub Release asset or deploy the Pages build from your fork.
+The same `Deploy` workflow also builds custom `.ext2` disk images from a Dockerfile. You can point it at `dockerfiles/debian_mini` or another Dockerfile, then either publish the result as a GitHub Release asset or deploy the Pages build from your fork. Both the terminal root (`/`) and the graphical Alpine X11 desktop (`/alpine.html`, with VT1↔VT7 switching, fullscreen mode, display scaling/pause, `DISPLAY=:0` app launching, and VirtualKeyBar X11 forwarding) are included in the Pages output.
 
 > [!NOTE]
 > `dockerfiles/debian_large` is too large of an image for GitHub pages.

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
-import { createVmManager, resolveShellPath } from '../../src/lib/vm/vmManager.js';
+import { createVmManager, resolveShellPath, sendKeySequenceToKms } from '../../src/lib/vm/vmManager.js';
 import {
 	sessions,
 	activeSessionId,
@@ -735,4 +735,88 @@ describe('vmManager.js lifecycle, WebGL fallback, KMS scaling, multi-tab & clean
 		expect(env.mockCx.setCustomConsole).not.toHaveBeenCalled();
 		expect(env.mockCx.run).not.toHaveBeenCalled();
 	});
+
+	it('injects DISPLAY=:0, forwards VT7 virtual keys to KMS textarea, focuses display, and runs commands in dedicated tabs on /sbin/init', async () => {
+		const env = createFakeTerminalEnv({ webglShouldThrow: true });
+		let activateCb = null;
+		env.mockCx.setActivateConsole.mockImplementation((cb) => {
+			activateCb = cb;
+		});
+		let primaryRuns = 0;
+		const runCalls = [];
+		env.mockCx.run.mockImplementation(async (cmd, args, opts) => {
+			runCalls.push({ cmd, args, opts });
+			primaryRuns++;
+			if (primaryRuns === 1) {
+				return await new Promise((resolve) => {
+					setTimeout(() => resolve({ status: 0 }), 5000);
+				});
+			}
+			return { status: 0 };
+		});
+
+		const kmsTextarea = document.createElement('textarea');
+		document.body.appendChild(kmsTextarea);
+		const keyEvents = [];
+		kmsTextarea.addEventListener('keydown', (e) => {
+			keyEvents.push({ key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey });
+		});
+
+		const manager = createVmManager(
+			{
+				diskImageType: 'cloud',
+				diskImageUrl: 'wss://disks.webvm.io/alpine_20251007.ext2',
+				needsDisplay: true,
+				printIntro: false,
+				cmd: '/sbin/init',
+				args: [],
+				opts: { uid: 0, gid: 0 }
+			},
+			{ cacheId: 'blocks_alpine', loadDeps: env.loadDeps }
+		);
+
+		try {
+			await manager.boot({ consoleElement: consoleEl, displayElement: displayEl });
+
+			// Default session env has DISPLAY=:0 when needsDisplay is true
+			expect(get(sessions)[0].env).toContain('DISPLAY=:0');
+
+			// CheerpX activating VT7 switches activeVt, applies KMS scale, and focuses KMS textarea
+			activateCb(7);
+			expect(get(activeVt)).toBe(7);
+			expect(document.activeElement).toBe(kmsTextarea);
+
+			// Clicking display focuses KMS textarea
+			consoleEl.focus?.();
+			expect(manager.focusDisplay()).toBe(true);
+			expect(document.activeElement).toBe(kmsTextarea);
+
+			// VirtualKeyBar sequences on VT7 forward to KMS textarea instead of primary terminal
+			manager.sendInputToActive('\x1b[A'); // ArrowUp
+			manager.sendInputToActive('\x03'); // Ctrl+C
+			manager.sendInputToActive('\x1bx'); // Alt+x
+			expect(keyEvents).toEqual([
+				{ key: 'ArrowUp', ctrlKey: false, altKey: false },
+				{ key: 'c', ctrlKey: true, altKey: false },
+				{ key: 'x', ctrlKey: false, altKey: true }
+			]);
+			expect(env.cxReadSpy).not.toHaveBeenCalled();
+
+			// Direct helper handles F-keys & Escape
+			expect(sendKeySequenceToKms('\x1bOP')).toBe(true);
+			expect(keyEvents[keyEvents.length - 1].key).toBe('F1');
+
+			// runCommandInTerminal on /sbin/init runs in a dedicated cx.run task tab with DISPLAY=:0
+			const res = await manager.runCommandInTerminal('xterm &', { title: 'xterm' });
+			expect(res.status).toBe(0);
+			const taskRun = runCalls.find((c) => c.cmd === '/bin/sh');
+			expect(taskRun).toBeTruthy();
+			expect(taskRun.args).toEqual(['-c', 'xterm &']);
+			expect(taskRun.opts.env).toContain('DISPLAY=:0');
+		} finally {
+			manager.dispose();
+			kmsTextarea.remove();
+		}
+	});
 });
+

@@ -8,6 +8,7 @@
 	export let virtualKeysVisible = false;
 	export let searchOpen = false;
 	export let activeRenderer = 'dom';
+	export let isFullscreen = false;
 
 	const dispatch = createEventDispatcher();
 	const scaleOptions = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -141,6 +142,26 @@
 					{/each}
 				</select>
 			</label>
+
+			<button
+				type="button"
+				data-testid="display-fullscreen-btn"
+				aria-pressed={isFullscreen}
+				aria-label={isFullscreen ? 'Exit fullscreen display' : 'Fullscreen display'}
+				title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen graphical display'}
+				class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {isFullscreen
+					? 'bg-white/10 border-white/20 text-white font-medium'
+					: 'bg-transparent border-white/10 text-zinc-300 hover:bg-white/5 hover:text-white'}"
+				on:click={() => dispatch('toggleFullscreen')}
+			>
+				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="M8 3H5a2 2 0 0 0-2 2v3" />
+					<path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+					<path d="M3 16v3a2 2 0 0 0 2 2h3" />
+					<path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+				</svg>
+				<span>{isFullscreen ? 'Exit Full' : 'Fullscreen'}</span>
+			</button>
 		</div>
 	{/if}
 

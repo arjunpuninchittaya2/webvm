@@ -51,9 +51,11 @@
 
 	let consoleElement = null;
 	let displayElement = null;
+	let displayWrapperEl = null;
 	let sideBarPinned = $settings.sidebarPin;
 	let searchOpen = false;
 	let settingsOpen = false;
+	let isFullscreen = false;
 	let searchMatchIndex = -1;
 	let searchMatchCount = 0;
 
@@ -253,9 +255,34 @@
 			vmManager.pasteClipboard();
 		}
 	}
+	function handleFullscreenChange() {
+		isFullscreen = typeof document !== 'undefined' && Boolean(document.fullscreenElement);
+		vmManager.scheduleResize();
+		vmManager.applyDisplayScale(true);
+		if (isFullscreen && $activeVt === 7) {
+			vmManager.focusDisplay();
+		}
+	}
+
+	async function toggleDisplayFullscreen() {
+		if (typeof document === 'undefined') return;
+		try {
+			if (document.fullscreenElement) {
+				await document.exitFullscreen();
+				return;
+			}
+			const target = ($activeVt === 7 && displayWrapperEl) || displayWrapperEl || consoleElement;
+			if (target?.requestFullscreen) {
+				await target.requestFullscreen();
+			}
+		} catch {
+			addToast({ message: 'Fullscreen mode blocked by browser', type: 'warning' });
+		}
+	}
 </script>
 
 <svelte:window on:keydown={handleGlobalKeydown} />
+<svelte:document on:fullscreenchange={handleFullscreenChange} />
 
 <main
 	class="relative w-full h-full flex flex-row overflow-hidden bg-zinc-950 text-zinc-200 {$settings.powerSaver || $pageHidden
@@ -295,6 +322,7 @@
 			virtualKeysVisible={$settings.virtualKeysVisible}
 			searchOpen={searchOpen}
 			activeRenderer={$activeRenderer}
+			isFullscreen={isFullscreen}
 			on:copy={() => vmManager.copySelection()}
 			on:paste={() => vmManager.pasteClipboard()}
 			on:toggleSearch={toggleSearch}
@@ -303,6 +331,7 @@
 			on:toggleVt={() => vmManager.toggleVt()}
 			on:toggleDisplayPause={() => vmManager.toggleDisplayPause()}
 			on:changeDisplayScale={(e) => settings.updateSetting('displayScale', e.detail)}
+			on:toggleFullscreen={toggleDisplayFullscreen}
 			on:openSettings={() => {
 				settingsOpen = true;
 			}}
@@ -323,12 +352,26 @@
 		<div class="relative flex-1 min-h-0 w-full overflow-hidden">
 			{#if configObj?.needsDisplay}
 				<div
+					bind:this={displayWrapperEl}
 					data-testid="display-wrapper"
-					class="absolute inset-0 transition-opacity duration-150 {$activeVt === 7
+					class="absolute inset-0 bg-black transition-opacity duration-150 {$activeVt === 7
 						? 'z-20 opacity-100 pointer-events-auto'
 						: 'z-0 opacity-0 pointer-events-none'}"
 				>
-					<canvas bind:this={displayElement} class="w-full h-full cursor-none" id="display"></canvas>
+					<canvas
+						bind:this={displayElement}
+						class="w-full h-full cursor-none"
+						id="display"
+						on:click={() => vmManager.focusDisplay()}
+					></canvas>
+					{#if $displayPaused}
+						<div
+							data-testid="display-paused-badge"
+							class="pointer-events-none absolute top-3 right-3 px-2.5 py-1 rounded-lg border border-white/15 bg-zinc-900/90 backdrop-blur-md text-[11px] font-mono text-zinc-200 shadow-lg"
+						>
+							Display Paused
+						</div>
+					{/if}
 				</div>
 			{/if}
 

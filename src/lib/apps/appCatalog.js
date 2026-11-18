@@ -124,6 +124,16 @@ export const APP_CATALOG = [
 		command: 'ls -la /home/user/workspace',
 		tags: ['ls', 'files', 'workspace', 'shell'],
 		chromebookFriendly: true
+	},
+	{
+		id: 'x11-terminal',
+		name: 'X11 GUI Terminal (Alpine)',
+		category: 'Utilities',
+		runtime: 'sh',
+		description: 'Launch a graphical terminal window on DISPLAY=:0 inside the VT7 X11 desktop.',
+		command: 'DISPLAY=:0 sh -c "command -v xterm >/dev/null && exec xterm || command -v urxvt >/dev/null && exec urxvt || echo X11 terminal not installed"',
+		tags: ['x11', 'gui', 'alpine', 'desktop', 'xterm'],
+		chromebookFriendly: true
 	}
 ];
 
