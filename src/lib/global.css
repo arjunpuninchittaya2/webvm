@@ -7,7 +7,8 @@ body
 	margin: 0;
 	height: 100%;
 	overflow: hidden;
-	background: black;
+	background: #09090b;
+	color: #e4e4e7;
 }
 
 html
@@ -15,10 +16,67 @@ html
 	height: 100%;
 }
 
+@keyframes wvm-enter
+{
+	from
+	{
+		opacity: var(--wvm-enter-opacity, 1);
+		transform: translate3d(0, var(--wvm-enter-translate-y, 0px), 0) scale(var(--wvm-enter-scale, 1));
+	}
+	to
+	{
+		opacity: 1;
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+}
+
+@layer utilities
+{
+	.animate-in
+	{
+		animation-name: wvm-enter;
+		animation-duration: 150ms;
+		animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+		animation-fill-mode: both;
+		--wvm-enter-opacity: 1;
+		--wvm-enter-scale: 1;
+		--wvm-enter-translate-y: 0px;
+	}
+
+	.fade-in-0
+	{
+		--wvm-enter-opacity: 0;
+	}
+
+	.zoom-in-95
+	{
+		--wvm-enter-scale: 0.95;
+		--wvm-enter-opacity: 0;
+	}
+
+	.animate-in.duration-150
+	{
+		animation-duration: 150ms;
+	}
+}
+
+.power-saver .animate-in,
+.power-saver .animate-menu-show,
+.power-saver .animate-menu-hide,
+.power-saver .animate-fade-in,
+.power-saver .animate-zoom-in-95,
+.power-saver .animate-pulse,
+.power-saver .animate-spin,
+.power-saver .animate-bounce
+{
+	animation: none !important;
+	transition: none !important;
+}
+
 @media (width <= 850px)
 {
 	html
 	{
-		font-size: calc(100vw / 55);
+		font-size: clamp(12px, calc(100vw / 30), 16px);
 	}
 }

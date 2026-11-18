@@ -238,26 +238,27 @@
 	}
 </script>
 
-<div class="flex flex-col gap-2 text-xs text-gray-100" data-testid="files-tab">
-	<div class="flex items-center justify-between">
-		<h1 class="text-base font-bold flex items-center gap-1.5">
-			<i class="fas fa-folder-open text-amber-400" aria-hidden="true"></i>
+<div class="flex flex-col gap-2.5 text-xs text-zinc-200" data-testid="files-tab">
+	<div class="flex items-center justify-between pr-8">
+		<h1 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+			<i class="fas fa-folder-open text-zinc-400 text-xs" aria-hidden="true"></i>
 			<span>Files</span>
 		</h1>
 		<button
 			type="button"
-			class="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-500 text-gray-200"
+			class="h-7 w-7 inline-flex items-center justify-center rounded-lg border border-white/10 bg-zinc-900/60 hover:bg-white/5 hover:border-white/20 text-zinc-400 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			aria-label="Refresh files"
+			title="Refresh files"
 			data-testid="files-refresh-btn"
 			on:click={() => ensureWorkspaceHydrated()}
 		>
-			<i class="fas fa-rotate-right" aria-hidden="true"></i>
+			<i class="fas fa-rotate-right text-xs" aria-hidden="true"></i>
 		</button>
 	</div>
 
 	<div class="flex items-center gap-1">
 		<select
-			class="flex-1 bg-neutral-700 border border-neutral-500 rounded px-1.5 py-1 text-xs text-gray-100"
+			class="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-200 transition-colors focus:border-white/20 focus:outline-none"
 			aria-label="Mount point"
 			data-testid="files-mount-select"
 			bind:value={selectedMount}
@@ -272,17 +273,17 @@
 		</select>
 	</div>
 
-	<div class="flex items-center gap-1 bg-neutral-700/70 rounded px-2 py-1">
+	<div class="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900/60 px-2.5 py-1.5">
 		<button
 			type="button"
-			class="px-1.5 py-0.5 rounded bg-neutral-600 hover:bg-neutral-500 text-gray-200 shrink-0"
+			class="h-6 px-2 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-zinc-300 hover:text-white text-[11px] font-medium shrink-0 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			aria-label="Up to parent directory (..)"
 			data-testid="parent-dir-btn"
 			on:click={goUp}
 		>
-			<i class="fas fa-arrow-up mr-1" aria-hidden="true"></i>..
+			<i class="fas fa-arrow-up text-[10px] mr-1" aria-hidden="true"></i>..
 		</button>
-		<span class="truncate font-mono text-[11px] text-gray-300" data-testid="files-current-path">
+		<span class="font-mono text-[11px] text-zinc-300 break-all min-w-0" data-testid="files-current-path">
 			{selectedMount}{currentDir ? `/${currentDir}` : ''}
 		</span>
 	</div>
@@ -300,61 +301,61 @@
 		/>
 		<button
 			type="button"
-			class="flex-1 px-2 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-medium flex items-center justify-center gap-1"
+			class="flex-1 h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			data-testid="files-upload-btn"
 			on:click={() => uploadInput?.click()}
 		>
-			<i class="fas fa-upload" aria-hidden="true"></i>
+			<i class="fas fa-upload text-xs" aria-hidden="true"></i>
 			<span>Upload Files / Archives</span>
 		</button>
 	</div>
 
-	<form class="flex items-center gap-1" on:submit|preventDefault={handleMkdir}>
+	<form class="flex items-center gap-1.5" on:submit|preventDefault={handleMkdir}>
 		<input
 			type="text"
 			placeholder="New folder name..."
 			aria-label="New folder name"
 			data-testid="mkdir-input"
 			bind:value={mkdirName}
-			class="flex-1 min-w-0 bg-neutral-700 border border-neutral-500 rounded px-2 py-1 text-xs text-gray-100 placeholder-gray-400"
+			class="flex-1 min-w-0 rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 		/>
 		<button
 			type="submit"
 			aria-label="Create folder (mkdir)"
 			data-testid="mkdir-btn"
-			class="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-500 text-gray-100 shrink-0"
+			class="h-8 px-2.5 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-zinc-200 text-xs font-medium shrink-0 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 		>
-			<i class="fas fa-folder-plus mr-1" aria-hidden="true"></i>New Folder
+			<i class="fas fa-folder-plus text-[11px] mr-1" aria-hidden="true"></i>New Folder
 		</button>
 	</form>
 
 	{#if statusError}
-		<div class="p-1.5 rounded bg-red-900/70 border border-red-600 text-red-100 text-[11px]" role="alert">
+		<div class="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-[11px] leading-relaxed text-rose-300" role="alert">
 			{statusError}
 		</div>
 	{/if}
 	{#if statusMessage}
-		<div class="p-1.5 rounded bg-emerald-900/50 border border-emerald-600 text-emerald-100 text-[11px]" role="status">
+		<div class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] leading-relaxed text-emerald-300" role="status">
 			{statusMessage}
 		</div>
 	{/if}
 
 	{#if selectedMount !== '/home/user/workspace'}
-		<p class="text-[11px] text-gray-300 bg-neutral-700/50 p-2 rounded">
-			Mount <code>{selectedMount}</code> is managed inside the running Linux VM. Switch to <code>/home/user/workspace</code> to upload, edit, and persist host files.
+		<p class="text-[11px] leading-relaxed text-zinc-300 rounded-xl border border-white/10 bg-white/5 p-2.5">
+			Mount <code class="font-mono text-[10px] text-zinc-200 break-all">{selectedMount}</code> is managed inside the running Linux VM. Switch to <code class="font-mono text-[10px] text-zinc-200 break-all">/home/user/workspace</code> to upload, edit, and persist host files.
 		</p>
 	{:else}
-		<ul class="flex flex-col gap-1 max-h-60 overflow-y-auto scrollbar" data-testid="files-list">
+		<ul class="flex flex-col gap-1.5 max-h-60 overflow-y-auto scrollbar" data-testid="files-list">
 			{#if visibleEntries.length === 0}
-				<li class="text-gray-400 italic py-2 text-center">Workspace is empty. Upload or drop files onto the terminal.</li>
+				<li class="rounded-xl border border-white/5 bg-zinc-900/40 px-3 py-3 text-[11px] text-zinc-400 text-center">Workspace is empty. Upload or drop files onto the terminal.</li>
 			{:else}
 				{#each visibleEntries as entry (entry.path)}
 					<li
 						data-file-entry={entry.path}
 						data-testid="file-entry-{entry.name}"
-						class="flex flex-col gap-1 p-1.5 rounded bg-neutral-700/80 border border-neutral-600"
+						class="flex flex-col gap-1.5 p-2 rounded-xl border border-white/10 bg-zinc-900/60"
 					>
-						<div class="flex items-center justify-between gap-1">
+						<div class="flex items-center justify-between gap-1.5">
 							{#if renamingPath === entry.path}
 								<input
 									type="text"
@@ -363,11 +364,11 @@
 									data-testid="file-rename-input"
 									bind:value={renameValue}
 									on:keydown={(e) => handleRenameKeydown(e, entry)}
-									class="flex-1 min-w-0 bg-neutral-800 border border-amber-400 rounded px-1.5 py-0.5 text-xs text-white"
+									class="flex-1 min-w-0 rounded-lg border border-white/20 bg-zinc-950/60 px-2 py-1 text-xs text-zinc-100 focus:outline-none"
 								/>
 								<button
 									type="button"
-									class="px-1.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white"
+									class="h-6 px-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-medium transition-all active:scale-[0.97]"
 									on:click={() => commitRename(entry)}
 								>
 									Save
@@ -375,13 +376,13 @@
 							{:else}
 								<div class="flex items-center gap-1.5 min-w-0 flex-1">
 									<i
-										class="fas {entry.type === 'dir' ? 'fa-folder text-amber-400' : 'fa-file-code text-sky-300'} shrink-0"
+										class="fas {entry.type === 'dir' ? 'fa-folder text-zinc-300' : 'fa-file-code text-zinc-400'} shrink-0 text-xs"
 										aria-hidden="true"
 									></i>
 									{#if entry.type === 'dir'}
 										<button
 											type="button"
-											class="truncate text-left font-medium hover:underline text-amber-200"
+											class="truncate text-left font-medium text-xs text-zinc-100 hover:text-white hover:underline"
 											on:click={() => enterDir(entry)}
 										>
 											{entry.name}
@@ -389,24 +390,24 @@
 									{:else}
 										<button
 											type="button"
-											class="truncate text-left font-medium hover:underline text-gray-100"
+											class="truncate text-left font-medium text-xs text-zinc-200 hover:text-white hover:underline"
 											on:click={() => openInEditor(entry)}
 										>
 											{entry.name}
 										</button>
 									{/if}
 									{#if entry.parentDir && !currentDir}
-										<span class="text-[10px] text-gray-400 truncate">({entry.parentDir}/)</span>
+										<span class="font-mono text-[10px] text-zinc-500 truncate">({entry.parentDir}/)</span>
 									{/if}
 								</div>
-								<div class="flex items-center gap-1 shrink-0 text-[10px]">
+								<div class="flex items-center gap-1.5 shrink-0 text-[10px]">
 									{#if entry.type === 'file' && entry.executable}
-										<span class="px-1 rounded bg-emerald-800 text-emerald-200 font-mono" title="chmod +x executable">
+										<span class="px-1.5 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 font-mono text-[10px]" title="chmod +x executable">
 											+x
 										</span>
 									{/if}
 									{#if entry.type === 'file'}
-										<span class="text-gray-400">{formatSize(entry.size)}</span>
+										<span class="font-mono text-[10px] text-zinc-400">{formatSize(entry.size)}</span>
 									{/if}
 								</div>
 							{/if}
@@ -416,7 +417,7 @@
 							{#if entry.type === 'file'}
 								<button
 									type="button"
-									class="px-1.5 py-0.5 rounded bg-neutral-600 hover:bg-neutral-500 text-gray-100"
+									class="h-6 px-2 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-[11px] font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 									aria-label="Edit {entry.name}"
 									data-testid="file-edit-{entry.name}"
 									on:click={() => openInEditor(entry)}
@@ -425,16 +426,16 @@
 								</button>
 								<button
 									type="button"
-									class="px-1.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white"
+									class="h-6 px-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-medium text-emerald-300 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 									aria-label="Run {entry.name}"
 									data-testid="file-run-{entry.name}"
 									on:click={() => handleRunEntry(entry)}
 								>
-									<i class="fas fa-play mr-0.5" aria-hidden="true"></i>Run
+									<i class="fas fa-play text-[10px] mr-1" aria-hidden="true"></i>Run
 								</button>
 								<button
 									type="button"
-									class="px-1.5 py-0.5 rounded bg-neutral-600 hover:bg-neutral-500 text-gray-100"
+									class="h-6 px-2 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-[11px] font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 									aria-label="Toggle executable {entry.name}"
 									data-testid="file-chmod-{entry.name}"
 									on:click={() => handleToggleExec(entry)}
@@ -443,31 +444,31 @@
 								</button>
 								<button
 									type="button"
-									class="px-1.5 py-0.5 rounded bg-neutral-600 hover:bg-neutral-500 text-gray-100"
+									class="h-6 px-2 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-[11px] font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 									aria-label="Download {entry.name}"
 									data-testid="file-download-{entry.name}"
 									on:click={() => handleDownload(entry)}
 								>
-									<i class="fas fa-download mr-0.5" aria-hidden="true"></i>Download
+									<i class="fas fa-download text-[10px] mr-1" aria-hidden="true"></i>Download
 								</button>
 							{/if}
 							<button
 								type="button"
-								class="px-1.5 py-0.5 rounded bg-neutral-600 hover:bg-neutral-500 text-gray-100"
+								class="h-6 px-2 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-[11px] font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 								aria-label="Rename {entry.name}"
 								data-testid="file-rename-{entry.name}"
 								on:click={() => startRename(entry)}
 							>
-								<i class="fas fa-pen mr-0.5" aria-hidden="true"></i>Rename
+								<i class="fas fa-pen text-[10px] mr-1" aria-hidden="true"></i>Rename
 							</button>
 							<button
 								type="button"
-								class="px-1.5 py-0.5 rounded bg-red-800/80 hover:bg-red-700 text-red-100"
+								class="h-6 px-2 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-[11px] font-medium text-rose-300 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 								aria-label="Delete {entry.name}"
 								data-testid="file-delete-{entry.name}"
 								on:click={() => handleDelete(entry)}
 							>
-								<i class="fas fa-trash-can mr-0.5" aria-hidden="true"></i>Delete
+								<i class="fas fa-trash-can text-[10px] mr-1" aria-hidden="true"></i>Delete
 							</button>
 						</div>
 					</li>
@@ -476,25 +477,25 @@
 		</ul>
 	{/if}
 
-	<div class="pt-2 border-t border-neutral-500/50 flex flex-col gap-1.5">
-		<span class="text-[11px] font-semibold text-gray-300">Workspace Snapshots</span>
-		<div class="flex items-center gap-1">
+	<div class="pt-3 border-t border-white/5 flex flex-col gap-2">
+		<span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Workspace Snapshots</span>
+		<div class="flex items-center gap-1.5">
 			<button
 				type="button"
-				class="flex-1 px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-500 text-gray-100 flex items-center justify-center gap-1"
+				class="flex-1 h-8 px-2.5 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-xs font-medium text-zinc-200 flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				data-testid="export-snapshot-btn"
 				on:click={handleExportSnapshot}
 			>
-				<i class="fas fa-file-export" aria-hidden="true"></i>
+				<i class="fas fa-file-export text-[11px]" aria-hidden="true"></i>
 				<span>Export Snapshot</span>
 			</button>
 			<button
 				type="button"
-				class="flex-1 px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-500 text-gray-100 flex items-center justify-center gap-1"
+				class="flex-1 h-8 px-2.5 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-xs font-medium text-zinc-200 flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				data-testid="import-snapshot-btn"
 				on:click={() => snapshotInput?.click()}
 			>
-				<i class="fas fa-file-import" aria-hidden="true"></i>
+				<i class="fas fa-file-import text-[11px]" aria-hidden="true"></i>
 				<span>Import Snapshot</span>
 			</button>
 			<input
@@ -509,11 +510,11 @@
 		</div>
 		<button
 			type="button"
-			class="w-full px-2 py-1 rounded bg-red-900/80 hover:bg-red-700 text-red-100 flex items-center justify-center gap-1"
+			class="w-full h-8 px-3 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-xs font-medium text-rose-300 flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			data-testid="workspace-reset-btn"
 			on:click={handleResetWorkspace}
 		>
-			<i class="fas fa-broom" aria-hidden="true"></i>
+			<i class="fas fa-broom text-[11px]" aria-hidden="true"></i>
 			<span>Reset Workspace</span>
 		</button>
 	</div>

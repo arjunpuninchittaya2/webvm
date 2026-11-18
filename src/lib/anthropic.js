@@ -57,6 +57,168 @@ function addMessageInternal(role, content)
 	messageList.set(messages);
 }
 
+const ERROR_PREFIX_RE = /^(?:Error|API Error|Provider returned error):\s*/i;
+const TRUNCATED_JSON_RE = /\{\s*(?:"|error\s*:)|"(?:error|message|detail)"\s*:\s*\{/i;
+const DEFAULT_JSON_ERROR_FALLBACK = 'Request failed. Please check your API key and try again.';
+
+function safeString(val)
+{
+	if (val == null)
+		return '';
+	if (typeof val === 'string')
+		return val;
+	try
+	{
+		return String(val);
+	}
+	catch
+	{
+		return '';
+	}
+}
+
+function safeGet(fn)
+{
+	try
+	{
+		return fn();
+	}
+	catch
+	{
+		return undefined;
+	}
+}
+
+function stripErrorPrefixes(text)
+{
+	let out = safeString(text).trim();
+	while (ERROR_PREFIX_RE.test(out))
+	{
+		out = out.replace(ERROR_PREFIX_RE, '').trim();
+	}
+	return out;
+}
+
+function extractMessageFromJsonBlob(text)
+{
+	const trimmed = safeString(text).trim();
+	if (!trimmed.endsWith('}'))
+		return null;
+
+	let searchFrom = 0;
+	let attempts = 0;
+	while (searchFrom < trimmed.length && attempts < 20)
+	{
+		const idx = trimmed.indexOf('{', searchFrom);
+		if (idx === -1)
+			break;
+		searchFrom = idx + 1;
+
+		const candidate = trimmed.slice(idx);
+		if (!/^\{\s*["}]/.test(candidate))
+			continue;
+
+		attempts++;
+		try
+		{
+			const parsed = JSON.parse(candidate);
+			if (!parsed || typeof parsed !== 'object')
+				continue;
+
+			const prefix = trimmed.slice(0, idx).replace(/[:\s]+$/, '').trim();
+			const inner =
+				(typeof parsed.error?.error?.message === 'string' && parsed.error.error.message) ||
+				(typeof parsed.error?.message === 'string' && parsed.error.message) ||
+				(typeof parsed.message === 'string' && parsed.message) ||
+				(typeof parsed.detail === 'string' && parsed.detail) ||
+				(typeof parsed.error_description === 'string' && parsed.error_description) ||
+				(typeof parsed.error === 'string' && parsed.error) ||
+				'';
+
+			if (inner.trim())
+				return inner.trim();
+			if (prefix && !/^\d{3}$/.test(prefix))
+				return prefix;
+			return DEFAULT_JSON_ERROR_FALLBACK;
+		}
+		catch
+		{
+			// Not valid JSON starting at this '{'; continue scanning rightward
+		}
+	}
+	return null;
+}
+
+export function formatCleanError(err)
+{
+	if (!err)
+		return 'Unknown error';
+
+	let raw = '';
+	if (typeof err === 'string')
+	{
+		raw = err;
+	}
+	else if (typeof err === 'object')
+	{
+		const status = safeGet(() => err.status);
+		if (status === 401)
+			return 'Invalid API key';
+
+		const candidates = [
+			safeGet(() => err.error?.error?.message),
+			safeGet(() => err.error?.message),
+			safeGet(() => err.message),
+			safeGet(() => err.detail),
+			safeGet(() => (typeof err.error === 'string' ? err.error : undefined))
+		];
+		for (const c of candidates)
+		{
+			const s = safeString(c);
+			if (s.trim())
+			{
+				raw = s;
+				break;
+			}
+		}
+
+		if (!raw.trim())
+		{
+			if (status)
+				return `Request failed (HTTP ${safeString(status) || 'error'})`;
+			const str = safeString(err);
+			raw = str === '[object Object]' ? '' : str;
+		}
+	}
+	else
+	{
+		raw = safeString(err);
+	}
+
+	let cleaned = stripErrorPrefixes(raw);
+	for (let depth = 0; depth < 3; depth++)
+	{
+		const jsonExtracted = extractMessageFromJsonBlob(cleaned);
+		if (jsonExtracted === null)
+			break;
+		const next = stripErrorPrefixes(jsonExtracted);
+		if (next === cleaned)
+			break;
+		cleaned = next;
+	}
+
+	const jsonFragmentMatch = TRUNCATED_JSON_RE.exec(cleaned);
+	if (jsonFragmentMatch)
+	{
+		cleaned = cleaned.slice(0, jsonFragmentMatch.index).replace(/[:\s]+$/, '').trim();
+		cleaned = stripErrorPrefixes(cleaned);
+		if (/^\d{3}$/.test(cleaned))
+			return `Request failed (HTTP ${cleaned})`;
+	}
+
+	return cleaned || 'Unknown error';
+}
+
 async function sendMessages(handleTool)
 {
 	aiActivity.set(true);
@@ -141,15 +303,14 @@ async function sendMessages(handleTool)
 	catch(e)
 	{
 		tryPlausible("ClaudeAI Error");
-		if(e?.status == 401)
+		if(safeGet(() => e?.status) == 401)
 		{
 			addMessageInternal('error', 'Invalid API key');
 			clearApiKey();
 		}
 		else
 		{
-			const errMsg = e?.error?.error?.message || e?.error?.message || e?.message || String(e || 'Unknown error');
-			addMessageInternal('error', errMsg);
+			addMessageInternal('error', formatCleanError(e));
 		}
 	}
 	finally

@@ -258,7 +258,7 @@
 <svelte:window on:keydown={handleGlobalKeydown} />
 
 <main
-	class="relative w-full h-full flex flex-row overflow-hidden bg-black {$settings.powerSaver || $pageHidden
+	class="relative w-full h-full flex flex-row overflow-hidden bg-zinc-950 text-zinc-200 {$settings.powerSaver || $pageHidden
 		? 'power-saver'
 		: ''}"
 >
@@ -334,18 +334,20 @@
 
 			<div
 				bind:this={consoleElement}
-				class="absolute inset-0 z-10 p-1 scrollbar"
+				class="absolute inset-0 z-10 p-1 scrollbar bg-zinc-950"
 				id="console"
 			></div>
 
 			{#if isDraggingOver}
 				<div
 					data-testid="dropzone-overlay"
-					class="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-amber-400 bg-neutral-900/80 text-amber-200"
+					class="pointer-events-none absolute inset-3 z-30 flex flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-white/20 bg-zinc-950/90 backdrop-blur-md shadow-2xl text-zinc-200 animate-in fade-in-0 duration-150"
 				>
-					<i class="fas fa-upload text-3xl mb-2" aria-hidden="true"></i>
-					<p class="text-sm font-semibold">Drop files, scripts, archives, or i386 binaries</p>
-					<p class="text-xs text-gray-300">Imports into /home/user/workspace</p>
+					<i class="fas fa-upload text-2xl text-zinc-300 mb-1" aria-hidden="true"></i>
+					<p class="text-sm font-semibold text-zinc-100">Drop files, scripts, archives, or i386 binaries</p>
+					<p class="text-[11px] leading-relaxed text-zinc-400">
+						Imports into <span class="font-mono text-zinc-300">/home/user/workspace</span>
+					</p>
 				</div>
 			{/if}
 

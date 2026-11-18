@@ -21,19 +21,20 @@
 </script>
 
 <div
-	class="flex flex-wrap items-center gap-1.5 px-2 py-1 bg-neutral-900 border-b border-neutral-800 text-xs text-gray-200 shrink-0"
+	class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-zinc-900/80 backdrop-blur-sm border-b border-white/10 text-xs text-zinc-200 shrink-0"
 	data-testid="terminal-toolbar"
 >
 	<button
 		type="button"
 		data-testid="toolbar-copy-btn"
-		class="inline-flex items-center gap-1 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700"
+		class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-xs font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 		title="Copy selected text"
 		aria-label="Copy selection"
 		on:click={() => dispatch('copy')}
 	>
-		<svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-			<path d="M8 2a2 2 0 00-2 2v1H5a2 2 0 00-2 2v9a2 2 0 002 2h7a2 2 0 002-2v-1h1a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H8z" />
+		<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+			<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
 		</svg>
 		<span>Copy</span>
 	</button>
@@ -41,14 +42,14 @@
 	<button
 		type="button"
 		data-testid="toolbar-paste-btn"
-		class="inline-flex items-center gap-1 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700"
+		class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-xs font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 		title="Paste from clipboard"
 		aria-label="Paste clipboard"
 		on:click={() => dispatch('paste')}
 	>
-		<svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-			<path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-			<path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+		<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+			<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
 		</svg>
 		<span>Paste</span>
 	</button>
@@ -59,17 +60,14 @@
 		aria-pressed={searchOpen}
 		aria-label="Search terminal"
 		title="Find in terminal (Ctrl+Shift+F)"
-		class="inline-flex items-center gap-1 px-2 py-1 rounded border {searchOpen
-			? 'bg-amber-600/30 border-amber-500 text-amber-200'
-			: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
+		class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {searchOpen
+			? 'bg-white/10 border-white/20 text-white font-medium'
+			: 'bg-transparent border-white/10 text-zinc-300 hover:bg-white/5 hover:text-white'}"
 		on:click={() => dispatch('toggleSearch')}
 	>
-		<svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-			<path
-				fill-rule="evenodd"
-				d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-				clip-rule="evenodd"
-			/>
+		<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<circle cx="11" cy="11" r="8" />
+			<path d="m21 21-4.3-4.3" />
 		</svg>
 		<span>Search</span>
 	</button>
@@ -80,35 +78,39 @@
 		aria-pressed={virtualKeysVisible}
 		aria-label="Toggle virtual keys"
 		title="Show/hide Chromebook virtual key bar"
-		class="inline-flex items-center gap-1 px-2 py-1 rounded border {virtualKeysVisible
-			? 'bg-amber-600/30 border-amber-500 text-amber-200'
-			: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
+		class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {virtualKeysVisible
+			? 'bg-white/10 border-white/20 text-white font-medium'
+			: 'bg-transparent border-white/10 text-zinc-300 hover:bg-white/5 hover:text-white'}"
 		on:click={() => dispatch('toggleVirtualKeys')}
 	>
-		<svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-			<path
-				fill-rule="evenodd"
-				d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm2 1v2h2V6H5zm3 0v2h2V6H8zm3 0v2h2V6h-2zm3 0v2h1V6h-1zM5 9v2h2V9H5zm3 0v2h2V9H8zm3 0v2h4V9h-4zm-4 3v1h6v-1H7z"
-				clip-rule="evenodd"
-			/>
+		<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<path d="M10 8h.01" />
+			<path d="M12 12h.01" />
+			<path d="M14 8h.01" />
+			<path d="M16 12h.01" />
+			<path d="M18 8h.01" />
+			<path d="M6 8h.01" />
+			<path d="M7 16h10" />
+			<path d="M8 12h.01" />
+			<rect width="20" height="16" x="2" y="4" rx="2" />
 		</svg>
 		<span>Keys</span>
 	</button>
 
 	{#if vtAvailable}
-		<div class="flex items-center gap-1.5 pl-1.5 ml-1 border-l border-neutral-700">
+		<div class="flex items-center gap-1.5 pl-2 ml-1 border-l border-white/10">
 			<button
 				type="button"
 				data-testid="vt-toggle-btn"
 				aria-label="Switch between VT1 console and VT7 display"
 				title="Toggle VT1 Text Console / VT7 X11 Display"
-				class="inline-flex items-center gap-1 px-2 py-1 rounded border {activeVt === 7
-					? 'bg-sky-700/60 border-sky-500 text-sky-100'
-					: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
+				class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {activeVt === 7
+					? 'bg-white/10 border-white/20 text-white font-medium'
+					: 'bg-transparent border-white/10 text-zinc-300 hover:bg-white/5 hover:text-white'}"
 				on:click={() => dispatch('toggleVt')}
 			>
 				<span class="font-mono font-semibold">VT{activeVt}</span>
-				<span class="text-gray-300">→ VT{activeVt === 7 ? 1 : 7}</span>
+				<span class="text-zinc-400">→ VT{activeVt === 7 ? 1 : 7}</span>
 			</button>
 
 			<button
@@ -117,22 +119,22 @@
 				aria-pressed={displayPaused}
 				aria-label={displayPaused ? 'Resume display updates' : 'Pause display updates'}
 				title={displayPaused ? 'Resume X11 display resizing' : 'Pause X11 display resizing'}
-				class="inline-flex items-center gap-1 px-2 py-1 rounded border {displayPaused
-					? 'bg-amber-700/50 border-amber-500 text-amber-100'
-					: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
+				class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {displayPaused
+					? 'bg-white/10 border-white/20 text-white font-medium'
+					: 'bg-transparent border-white/10 text-zinc-300 hover:bg-white/5 hover:text-white'}"
 				on:click={() => dispatch('toggleDisplayPause')}
 			>
 				<span>{displayPaused ? 'Resume Display' : 'Pause Display'}</span>
 			</button>
 
-			<label class="inline-flex items-center gap-1 text-gray-300">
+			<label class="inline-flex items-center gap-1.5 text-xs text-zinc-400">
 				<span>Scale</span>
 				<select
 					data-testid="display-scale-select"
 					aria-label="Display scale"
 					value={String(displayScale)}
 					on:change={handleScaleChange}
-					class="px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-gray-100 text-xs"
+					class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 text-xs text-zinc-200 transition-colors focus:border-white/20 focus:outline-none"
 				>
 					{#each scaleOptions as opt}
 						<option value={String(opt)}>{opt}x</option>
@@ -144,7 +146,7 @@
 
 	<div class="ml-auto flex items-center gap-2">
 		<span
-			class="hidden sm:inline-block px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-[11px] font-mono text-gray-300"
+			class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md border border-white/10 bg-white/5 text-[10px] font-mono text-zinc-400"
 			title="Active terminal renderer"
 		>
 			{activeRenderer.toUpperCase()}
@@ -155,15 +157,12 @@
 			data-testid="settings-btn"
 			aria-label="Open workstation settings"
 			title="Settings"
-			class="inline-flex items-center gap-1 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700"
+			class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-xs font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			on:click={() => dispatch('openSettings')}
 		>
-			<svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-				<path
-					fill-rule="evenodd"
-					d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
-					clip-rule="evenodd"
-				/>
+			<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+				<circle cx="12" cy="12" r="3" />
 			</svg>
 			<span>Settings</span>
 		</button>

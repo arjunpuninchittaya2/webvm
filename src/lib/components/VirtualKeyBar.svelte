@@ -106,7 +106,7 @@
 
 {#if visible}
 	<div
-		class="flex flex-col gap-1 px-2 py-1.5 bg-neutral-900 border-t border-neutral-800 text-xs text-gray-100 select-none shrink-0"
+		class="flex flex-col gap-1 px-2 py-1.5 bg-zinc-900/90 backdrop-blur-md border-t border-white/10 text-xs text-zinc-200 select-none shrink-0"
 		data-testid="virtual-key-bar"
 		role="toolbar"
 		aria-label="Virtual terminal keys"
@@ -115,7 +115,7 @@
 			<button
 				type="button"
 				data-testid="vkey-esc"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b', false)}
 			>
@@ -125,7 +125,7 @@
 			<button
 				type="button"
 				data-testid="vkey-tab"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\t', false)}
 			>
@@ -138,11 +138,11 @@
 				aria-pressed={stickyCtrl}
 				data-locked={ctrlLocked ? 'true' : 'false'}
 				title={ctrlLocked ? 'Ctrl locked (click to unlock)' : 'Sticky Ctrl (double-click to lock)'}
-				class="px-2 py-1 rounded border font-mono {stickyCtrl
+				class="h-7 px-2 rounded-lg border font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {stickyCtrl
 					? ctrlLocked
-						? 'bg-amber-500/50 border-amber-300 text-amber-100 font-semibold'
-						: 'bg-amber-600/40 border-amber-400 text-amber-200'
-					: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
+						? 'bg-white/20 border-white/30 text-white font-semibold'
+						: 'bg-white/10 border-white/20 text-white font-medium'
+					: 'bg-zinc-950/60 hover:bg-white/10 border-white/10 text-zinc-300 hover:text-white'}"
 				on:mousedown|preventDefault
 				on:click={toggleCtrl}
 				on:dblclick={lockCtrl}
@@ -156,11 +156,11 @@
 				aria-pressed={stickyAlt}
 				data-locked={altLocked ? 'true' : 'false'}
 				title={altLocked ? 'Alt locked (click to unlock)' : 'Sticky Alt (double-click to lock)'}
-				class="px-2 py-1 rounded border font-mono {stickyAlt
+				class="h-7 px-2 rounded-lg border font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {stickyAlt
 					? altLocked
-						? 'bg-amber-500/50 border-amber-300 text-amber-100 font-semibold'
-						: 'bg-amber-600/40 border-amber-400 text-amber-200'
-					: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
+						? 'bg-white/20 border-white/30 text-white font-semibold'
+						: 'bg-white/10 border-white/20 text-white font-medium'
+					: 'bg-zinc-950/60 hover:bg-white/10 border-white/10 text-zinc-300 hover:text-white'}"
 				on:mousedown|preventDefault
 				on:click={toggleAlt}
 				on:dblclick={lockAlt}
@@ -177,14 +177,14 @@
 					autocapitalize="none"
 					autocomplete="off"
 					spellcheck="false"
-					class="w-12 px-1.5 py-0.5 rounded bg-neutral-800 border border-amber-500/70 font-mono text-xs text-gray-100 placeholder:text-gray-400"
+					class="w-12 h-7 px-1.5 rounded-lg bg-zinc-950/80 border border-white/20 font-mono text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-white/30 focus:outline-none"
 					on:input={handleModInput}
 				/>
 			{/if}
 
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x03', false)}
 			>
@@ -193,7 +193,7 @@
 
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x04', false)}
 			>
@@ -202,7 +202,7 @@
 
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1a', false)}
 			>
@@ -211,19 +211,19 @@
 
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x0c', false)}
 			>
 				Ctrl+L
 			</button>
 
-			<span class="mx-0.5 text-neutral-600" aria-hidden="true">|</span>
+			<span class="mx-0.5 text-white/15" aria-hidden="true">|</span>
 
 			<button
 				type="button"
 				aria-label="Arrow Left"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b[D')}
 			>
@@ -232,7 +232,7 @@
 			<button
 				type="button"
 				aria-label="Arrow Down"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b[B')}
 			>
@@ -241,7 +241,7 @@
 			<button
 				type="button"
 				aria-label="Arrow Up"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b[A')}
 			>
@@ -250,7 +250,7 @@
 			<button
 				type="button"
 				aria-label="Arrow Right"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b[C')}
 			>
@@ -259,7 +259,7 @@
 
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b[H')}
 			>
@@ -267,7 +267,7 @@
 			</button>
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b[F')}
 			>
@@ -275,7 +275,7 @@
 			</button>
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b[5~')}
 			>
@@ -283,7 +283,7 @@
 			</button>
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => emitSequence('\x1b[6~')}
 			>
@@ -294,9 +294,9 @@
 				type="button"
 				data-testid="vkey-fn-toggle"
 				aria-pressed={showFnRow}
-				class="px-2 py-1 rounded border font-mono {showFnRow
-					? 'bg-amber-600/30 border-amber-500 text-amber-200'
-					: 'bg-neutral-800 hover:bg-neutral-700 border-neutral-700'}"
+				class="h-7 px-2 rounded-lg border font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {showFnRow
+					? 'bg-white/10 border-white/20 text-white font-medium'
+					: 'bg-zinc-950/60 hover:bg-white/10 border-white/10 text-zinc-300 hover:text-white'}"
 				on:mousedown|preventDefault
 				on:click={() => {
 					showFnRow = !showFnRow;
@@ -305,11 +305,11 @@
 				F1–F12
 			</button>
 
-			<span class="mx-0.5 text-neutral-600" aria-hidden="true">|</span>
+			<span class="mx-0.5 text-white/15" aria-hidden="true">|</span>
 
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700"
+				class="h-7 px-2.5 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 text-xs font-medium transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				on:mousedown|preventDefault
 				on:click={() => dispatch('copy')}
 			>
@@ -317,7 +317,7 @@
 			</button>
 			<button
 				type="button"
-				class="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700"
+				class="h-7 px-2.5 rounded-lg border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 text-xs font-medium transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				title={activeVt === 7 ? 'Paste into X11 display' : 'Paste into terminal'}
 				on:mousedown|preventDefault
 				on:click={() => dispatch('paste')}
@@ -331,7 +331,7 @@
 				{#each FUNCTION_KEYS as fk}
 					<button
 						type="button"
-						class="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 font-mono"
+						class="h-6 px-2 rounded-md border border-white/10 bg-zinc-950/60 hover:bg-white/10 hover:text-white text-zinc-200 font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 						on:mousedown|preventDefault
 						on:click={() => emitSequence(fk.seq)}
 					>

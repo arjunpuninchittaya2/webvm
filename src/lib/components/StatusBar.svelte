@@ -14,45 +14,46 @@
 </script>
 
 <footer
-	class="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-2.5 py-1 bg-neutral-900 border-t border-neutral-800 text-[11px] text-gray-300 shrink-0"
+	class="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-1 bg-zinc-950 border-t border-white/10 text-[11px] text-zinc-400 shrink-0"
 	data-testid="status-bar"
 >
 	<div class="flex items-center gap-2.5">
-		<span class="inline-flex items-center gap-1" data-testid="status-vm-state">
+		<span class="inline-flex items-center gap-1.5" data-testid="status-vm-state">
 			<span
-				class="w-2 h-2 rounded-full {$vmState === 'ready'
+				class="w-1.5 h-1.5 rounded-full {$vmState === 'ready'
 					? 'bg-emerald-400'
 					: $vmState === 'error'
-						? 'bg-red-500'
+						? 'bg-rose-400'
 						: 'bg-amber-400 animate-pulse'}"
+				aria-hidden="true"
 			></span>
-			<span class="capitalize">{$vmState}</span>
+			<span class="capitalize text-zinc-200">{$vmState}</span>
 		</span>
 
 		{#if $vtAvailable}
-			<span class="font-mono text-sky-300" data-testid="status-vt">
+			<span class="font-mono text-zinc-200" data-testid="status-vt">
 				VT{$activeVt}{$displayPaused ? ' (Paused)' : ''}
 			</span>
 		{:else}
-			<span class="font-mono text-gray-400" data-testid="status-vt">VT1</span>
+			<span class="font-mono text-zinc-400" data-testid="status-vt">VT1</span>
 		{/if}
 
 		{#if $activeSession}
-			<span class="font-mono text-gray-400" data-testid="status-session">
+			<span class="font-mono text-zinc-400 tabular-nums" data-testid="status-session">
 				{$activeSession.title} · {$activeSession.cols}×{$activeSession.rows}
 			</span>
 		{/if}
 	</div>
 
 	<div class="flex items-center gap-3">
-		<span class="font-mono" data-testid="status-renderer">
+		<span class="font-mono text-zinc-400" data-testid="status-renderer">
 			Renderer: {$activeRenderer.toUpperCase()}
 		</span>
-		<span class="font-mono" data-testid="status-cpu">CPU: {$cpuPercentage}%</span>
-		<span class="font-mono" data-testid="status-disk">Disk: {$diskLatency}ms</span>
+		<span class="font-mono text-zinc-400 tabular-nums" data-testid="status-cpu">CPU: {$cpuPercentage}%</span>
+		<span class="font-mono text-zinc-400 tabular-nums" data-testid="status-disk">Disk: {$diskLatency}ms</span>
 
 		{#if $tailscaleIp}
-			<span class="font-mono text-emerald-300" data-testid="status-tailscale">
+			<span class="font-mono text-emerald-400" data-testid="status-tailscale">
 				Tailscale: {$tailscaleIp}
 			</span>
 		{/if}
@@ -65,9 +66,9 @@
 			title={$settings.powerSaver
 				? 'Power Saver (ECO) enabled — click to disable'
 				: 'Enable Power Saver (ECO) mode'}
-			class="px-1.5 py-0.5 rounded border font-mono text-[10px] leading-tight transition-colors {$settings.powerSaver || $pageHidden
-				? 'bg-amber-900/60 text-amber-200 border-amber-600/80'
-				: 'bg-neutral-800 hover:bg-neutral-700 text-gray-300 border-neutral-700'}"
+			class="px-2 py-0.5 rounded-md border font-mono text-[10px] leading-tight transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {$settings.powerSaver || $pageHidden
+				? 'bg-white/10 border-white/20 text-white font-medium'
+				: 'bg-transparent border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white'}"
 			on:click={() => settings.updateSetting('powerSaver', !$settings.powerSaver)}
 		>
 			ECO{$settings.powerSaver ? ' ON' : ''}

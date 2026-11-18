@@ -80,6 +80,31 @@
 		refreshProcs();
 	}
 
+	function getMemoryPercent(mem) {
+		if (!mem || !Number.isFinite(mem.used) || !Number.isFinite(mem.limit) || mem.limit <= 0) {
+			return null;
+		}
+		return Math.min(100, Math.max(0, (mem.used / mem.limit) * 100));
+	}
+
+	function thresholdCardClass(percent) {
+		if (typeof percent !== 'number' || !Number.isFinite(percent)) {
+			return 'border-white/10 bg-white/5 text-zinc-200';
+		}
+		if (percent >= 95) {
+			return 'border-rose-500/20 bg-rose-500/10 text-rose-300';
+		}
+		if (percent >= 80) {
+			return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+		}
+		return 'border-white/10 bg-white/5 text-zinc-200';
+	}
+
+	$: storagePercent = storage && Number.isFinite(storage.percent) ? storage.percent : null;
+	$: memoryPercent = getMemoryPercent(memory);
+	$: storageCardClass = thresholdCardClass(storagePercent);
+	$: memoryCardClass = thresholdCardClass(memoryPercent);
+
 	onMount(() => {
 		refreshStorage();
 		refreshProcs();
@@ -98,64 +123,79 @@
 	onDestroy(() => clearInterval(timer));
 </script>
 
-<h1 class="text-lg font-bold">System Monitor</h1>
+<h1 class="text-sm font-semibold text-zinc-100 pr-8">System Monitor</h1>
 
-<section class="flex flex-col gap-3" aria-label="Resource usage">
-	<div>
-		<p class="text-sm"><span class="font-bold">CPU activity:</span> {$cpuPercentage}%</p>
-		<svg data-testid="sparkline-cpu" role="img" aria-label="CPU activity history" width={W} height={H} viewBox="0 0 {W} {H}" class="bg-neutral-800 rounded">
-			<polyline points={sparklinePoints(cpuSamples, W, H, 100)} fill="none" stroke="#fbbf24" stroke-width="1.5" />
+<section class="flex flex-col gap-2.5" aria-label="Resource usage">
+	<div class="rounded-xl border border-white/10 bg-zinc-900/60 p-2.5 flex flex-col gap-1.5 shadow-xs">
+		<p class="text-xs text-zinc-200 flex items-center justify-between">
+			<span class="font-semibold">CPU activity:</span>
+			<span class="font-mono text-[11px] tabular-nums text-zinc-300">{$cpuPercentage}%</span>
+		</p>
+		<svg data-testid="sparkline-cpu" role="img" aria-label="CPU activity history" width={W} height={H} viewBox="0 0 {W} {H}" class="w-full h-11 rounded-lg border border-white/5 bg-zinc-950/60">
+			<polyline points={sparklinePoints(cpuSamples, W, H, 100)} fill="none" stroke="#e4e4e7" stroke-width="1.5" />
 		</svg>
 	</div>
-	<div>
-		<p class="text-sm"><span class="font-bold">Disk latency:</span> {$diskLatency} ms</p>
-		<svg data-testid="sparkline-disk" role="img" aria-label="Disk latency history" width={W} height={H} viewBox="0 0 {W} {H}" class="bg-neutral-800 rounded">
-			<polyline points={sparklinePoints(latSamples, W, H)} fill="none" stroke="#38bdf8" stroke-width="1.5" />
+	<div class="rounded-xl border border-white/10 bg-zinc-900/60 p-2.5 flex flex-col gap-1.5 shadow-xs">
+		<p class="text-xs text-zinc-200 flex items-center justify-between">
+			<span class="font-semibold">Disk latency:</span>
+			<span class="font-mono text-[11px] tabular-nums text-zinc-300">{$diskLatency} ms</span>
+		</p>
+		<svg data-testid="sparkline-disk" role="img" aria-label="Disk latency history" width={W} height={H} viewBox="0 0 {W} {H}" class="w-full h-11 rounded-lg border border-white/5 bg-zinc-950/60">
+			<polyline points={sparklinePoints(latSamples, W, H)} fill="none" stroke="#a1a1aa" stroke-width="1.5" />
 		</svg>
 	</div>
-	<div class="text-sm" data-testid="storage-quota">
-		<span class="font-bold">IndexedDB storage quota:</span>
-		{#if storage === undefined}
-			Loading…
-		{:else if storage}
-			{formatBytes(storage.usage)} used of {formatBytes(storage.quota)} ({storage.percent.toFixed(1)}%)
-		{:else}
-			Unavailable
-		{/if}
+	<div class="rounded-xl border px-3 py-2 text-xs transition-colors {storageCardClass}" data-testid="storage-quota">
+		<div class="font-semibold">IndexedDB storage quota:</div>
+		<div class="mt-0.5 font-mono text-[11px] break-all">
+			{#if storage === undefined}
+				Loading…
+			{:else if storage}
+				{formatBytes(storage.usage)} used of {formatBytes(storage.quota)} ({storage.percent.toFixed(1)}%)
+			{:else}
+				Unavailable
+			{/if}
+		</div>
 	</div>
-	<div class="text-sm" data-testid="memory-stats">
-		<span class="font-bold">JS heap memory:</span>
-		{#if memory}
-			{formatBytes(memory.used)} used of {formatBytes(memory.limit)}
-		{:else}
-			Unavailable (browser does not expose memory stats)
-		{/if}
+	<div class="rounded-xl border px-3 py-2 text-xs transition-colors {memoryCardClass}" data-testid="memory-stats">
+		<div class="font-semibold">JS heap memory:</div>
+		<div class="mt-0.5 font-mono text-[11px] break-all">
+			{#if memory}
+				{formatBytes(memory.used)} used of {formatBytes(memory.limit)}{memoryPercent !== null ? ` (${memoryPercent.toFixed(1)}%)` : ''}
+			{:else}
+				Unavailable (browser does not expose memory stats)
+			{/if}
+		</div>
 	</div>
 </section>
 
 <section class="flex flex-col gap-2" aria-label="Processes">
-	<h2 class="font-bold">Processes</h2>
-	<div class="overflow-x-auto">
+	<h2 class="text-xs font-semibold text-zinc-200">Processes</h2>
+	<div class="overflow-x-auto rounded-xl border border-white/10 bg-zinc-900/60">
 		<table class="w-full text-xs text-left" data-testid="process-list">
 			<thead>
-				<tr class="text-gray-300"><th class="pr-1">ID</th><th class="pr-1">Name</th><th class="pr-1">Status</th><th></th></tr>
+				<tr class="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-white/10">
+					<th class="px-2 py-1.5 font-semibold">ID</th>
+					<th class="px-2 py-1.5 font-semibold">Name</th>
+					<th class="px-2 py-1.5 font-semibold">Status</th>
+					<th class="px-2 py-1.5"></th>
+				</tr>
 			</thead>
 			<tbody>
 				{#each $sessions as s (s.id)}
-					<tr class="border-t border-neutral-500">
-						<td class="pr-1 font-mono">{s.id}</td>
-						<td class="pr-1 truncate max-w-[6rem]" title="{s.cmd} {s.args.join(' ')}">{s.title}</td>
-						<td class="pr-1">{s.status}{s.exitCode != null ? ` (${s.exitCode})` : ''}</td>
-						<td><button type="button" class="px-1 rounded bg-neutral-700 hover:bg-neutral-500" on:click={() => stopSession(s)} aria-label="Stop {s.title}">Stop</button></td>
+					<tr class="border-t border-white/5 text-xs text-zinc-200">
+						<td class="px-2 py-1.5 font-mono text-[11px] text-zinc-300">{s.id}</td>
+						<td class="px-2 py-1.5 truncate max-w-[6rem]" title="{s.cmd} {s.args.join(' ')}">{s.title}</td>
+						<td class="px-2 py-1.5 text-[11px] text-zinc-300">{s.status}{s.exitCode != null ? ` (${s.exitCode})` : ''}</td>
+						<td class="px-2 py-1.5 text-right"><button type="button" class="px-2 py-0.5 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-[11px] font-medium text-zinc-200 transition-all active:scale-[0.97]" on:click={() => stopSession(s)} aria-label="Stop {s.title}">Stop</button></td>
 					</tr>
 				{/each}
 				{#if vmProcs}
 					{#each vmProcs as p (p.pid)}
-						<tr class="border-t border-neutral-500">
-							<td class="pr-1 font-mono">{p.pid}</td>
-							<td class="pr-1 truncate max-w-[6rem]" title={p.command}>{p.command}</td>
-							<td class="pr-1">{p.state}</td>
-							<td><button type="button" class="px-1 rounded bg-red-900 hover:bg-red-700" on:click={() => killPid(p)} aria-label="Kill PID {p.pid}">Kill</button></td>
+						<tr class="border-t border-white/5 text-xs text-zinc-200">
+							<td class="px-2 py-1.5 font-mono text-[11px] text-zinc-300">{p.pid}</td>
+							<td class="px-2 py-1.5 truncate max-w-[6rem]" title={p.command}>{p.command}</td>
+							<td class="px-2 py-1.5 text-[11px] text-zinc-300">{p.state}</td>
+							<td class="px-2 py-1.5 text-right"><button type="button" class="px-2 py-0.5 rounded-md border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-[11px] font-medium text-rose-300 transition-all active:scale-[0.97]" on:click={() => killPid(p)} aria-label="Kill PID {p.pid}">Kill</button></td>
 						</tr>
 					{/each}
 				{/if}
@@ -163,17 +203,17 @@
 		</table>
 	</div>
 	{#if $sessions.length === 0 && !vmProcs?.length}
-		<p class="text-xs text-gray-300">No active processes</p>
+		<p class="text-[11px] text-zinc-400">No active processes</p>
 	{/if}
 	{#if procError}
-		<p class="text-xs text-amber-300">{procError}</p>
+		<p class="rounded-xl border border-amber-500/20 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-300">{procError}</p>
 	{:else if vmProcs === null}
-		<p class="text-xs text-gray-300">VM /proc listing appears once the VM has booted.</p>
+		<p class="text-[11px] text-zinc-400">VM /proc listing appears once the VM has booted.</p>
 	{/if}
 	<div class="flex items-center gap-2">
-		<button type="button" class="px-2 py-0.5 text-xs rounded bg-neutral-700 hover:bg-neutral-500" on:click={refreshProcs}>Refresh</button>
+		<button type="button" class="h-7 px-2.5 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-xs font-medium text-zinc-200 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20" on:click={refreshProcs}>Refresh</button>
 	</div>
 	{#if lastAction}
-		<p class="text-xs text-emerald-300" role="status" data-testid="process-last-action">{lastAction}</p>
+		<p class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-300" role="status" data-testid="process-last-action">{lastAction}</p>
 	{/if}
 </section>

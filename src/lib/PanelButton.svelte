@@ -1,13 +1,28 @@
 <script>
+	const DEFAULT_BG = 'bg-zinc-900/60';
+	const DEFAULT_HOVER = 'hover:bg-white/5 hover:border-white/20 hover:text-white';
+
 	export let clickUrl = null;
 	export let clickHandler = null;
 	export let rightClickHandler = null;
 	export let buttonTooltip = null;
-	export let bgColor = "bg-neutral-700";
-	export let hoverColor = "hover:bg-neutral-500";
+	export let bgColor = DEFAULT_BG;
+	export let hoverColor = DEFAULT_HOVER;
 	export let buttonImage = null;
 	export let buttonIcon = null;
 	export let buttonText;
+	export let variant = 'default';
+
+	$: hasCustomBg = Boolean(bgColor && bgColor !== DEFAULT_BG);
+	$: hasCustomHover = Boolean(hoverColor && hoverColor !== DEFAULT_HOVER);
+	$: surfaceClasses =
+		variant === 'destructive' && !hasCustomBg
+			? 'border-rose-500/20 bg-rose-500/10 text-rose-300'
+			: `border-white/10 ${bgColor || DEFAULT_BG} text-zinc-200`;
+	$: hoverClasses =
+		variant === 'destructive' && !hasCustomHover
+			? 'hover:bg-rose-500/20 hover:border-rose-500/30'
+			: hoverColor || DEFAULT_HOVER;
 </script>
 
 {#if clickUrl != null}
@@ -17,15 +32,18 @@
 		rel="noopener noreferrer"
 		on:click={clickHandler}
 		on:contextmenu={rightClickHandler}
-		class="block"
+		class="block rounded-xl focus:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 	>
-		<span class="flex flex-row items-center {bgColor} p-2 rounded-md shadow-md shadow-neutral-900 {hoverColor} cursor-pointer" title={buttonTooltip}>
+		<span
+			class="flex flex-row items-center gap-2.5 px-3 py-2 rounded-xl border text-xs font-medium shadow-xs backdrop-blur-sm transition-all cursor-pointer active:scale-[0.97] {surfaceClasses} {hoverClasses}"
+			title={buttonTooltip}
+		>
 			{#if buttonImage}
-				<img src={buttonImage} alt="" class="inline w-8 h-8" />
+				<img src={buttonImage} alt="" class="inline w-5 h-5 shrink-0 object-contain" />
 			{:else if buttonIcon}
-				<i class="w-8 {buttonIcon} text-center" style="font-size: 2em;" aria-hidden="true"></i>
+				<i class="w-5 {buttonIcon} text-center text-sm shrink-0" aria-hidden="true"></i>
 			{/if}
-			<span class="ml-1">{buttonText}</span><slot></slot>
+			<span class="truncate">{buttonText}</span><slot></slot>
 		</span>
 	</a>
 {:else}
@@ -34,15 +52,20 @@
 		on:click={clickHandler}
 		on:contextmenu={rightClickHandler}
 		disabled={clickHandler == null}
-		class="w-full text-left"
+		class="w-full text-left rounded-xl focus:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 	>
-		<span class="flex flex-row items-center {bgColor} p-2 rounded-md shadow-md shadow-neutral-900 {clickHandler != null ? `${hoverColor} cursor-pointer` : ''}" title={buttonTooltip}>
+		<span
+			class="flex flex-row items-center gap-2.5 px-3 py-2 rounded-xl border text-xs font-medium shadow-xs backdrop-blur-sm transition-all {surfaceClasses} {clickHandler != null
+				? `${hoverClasses} cursor-pointer active:scale-[0.97]`
+				: 'opacity-50 cursor-not-allowed'}"
+			title={buttonTooltip}
+		>
 			{#if buttonImage}
-				<img src={buttonImage} alt="" class="inline w-8 h-8" />
+				<img src={buttonImage} alt="" class="inline w-5 h-5 shrink-0 object-contain" />
 			{:else if buttonIcon}
-				<i class="w-8 {buttonIcon} text-center" style="font-size: 2em;" aria-hidden="true"></i>
+				<i class="w-5 {buttonIcon} text-center text-sm shrink-0" aria-hidden="true"></i>
 			{/if}
-			<span class="ml-1">{buttonText}</span><slot></slot>
+			<span class="truncate">{buttonText}</span><slot></slot>
 		</span>
 	</button>
 {/if}

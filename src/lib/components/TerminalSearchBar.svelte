@@ -44,7 +44,7 @@
 
 {#if open}
 	<div
-		class="flex flex-wrap items-center gap-1.5 px-2 py-1 bg-neutral-900 border-b border-neutral-800 text-xs text-gray-200 shrink-0"
+		class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-zinc-900/90 backdrop-blur-md border-b border-white/10 text-xs text-zinc-200 shrink-0 animate-in fade-in-0 duration-150"
 		data-testid="terminal-search-bar"
 		role="search"
 		aria-label="Search terminal output"
@@ -56,7 +56,7 @@
 			type="text"
 			placeholder="Find in terminal..."
 			aria-label="Find in terminal"
-			class="w-48 sm:w-64 px-2 py-1 rounded bg-neutral-950 text-white border border-neutral-700 focus:border-amber-400 outline-none"
+			class="w-48 sm:w-64 h-7 px-2.5 rounded-lg border border-white/10 bg-zinc-950/60 text-xs text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 			on:input={() => emitSearch('next', true)}
 			on:keydown={handleKeydown}
 		/>
@@ -66,9 +66,9 @@
 			aria-pressed={caseSensitive}
 			aria-label="Match case"
 			title="Case sensitive"
-			class="px-1.5 py-1 rounded border font-mono {caseSensitive
-				? 'bg-amber-600/30 border-amber-500 text-amber-200'
-				: 'bg-neutral-800 border-neutral-700 text-gray-300'}"
+			class="h-7 px-2 rounded-lg border font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {caseSensitive
+				? 'bg-white/10 border-white/20 text-white font-medium'
+				: 'bg-transparent border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white'}"
 			on:click={() => {
 				caseSensitive = !caseSensitive;
 				emitSearch('next', false);
@@ -82,9 +82,9 @@
 			aria-pressed={regex}
 			aria-label="Use regular expression"
 			title="Regular expression"
-			class="px-1.5 py-1 rounded border font-mono {regex
-				? 'bg-amber-600/30 border-amber-500 text-amber-200'
-				: 'bg-neutral-800 border-neutral-700 text-gray-300'}"
+			class="h-7 px-2 rounded-lg border font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {regex
+				? 'bg-white/10 border-white/20 text-white font-medium'
+				: 'bg-transparent border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white'}"
 			on:click={() => {
 				regex = !regex;
 				emitSearch('next', false);
@@ -98,9 +98,9 @@
 			aria-pressed={wholeWord}
 			aria-label="Match whole word"
 			title="Whole word"
-			class="px-1.5 py-1 rounded border font-mono {wholeWord
-				? 'bg-amber-600/30 border-amber-500 text-amber-200'
-				: 'bg-neutral-800 border-neutral-700 text-gray-300'}"
+			class="h-7 px-2 rounded-lg border font-mono text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {wholeWord
+				? 'bg-white/10 border-white/20 text-white font-medium'
+				: 'bg-transparent border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white'}"
 			on:click={() => {
 				wholeWord = !wholeWord;
 				emitSearch('next', false);
@@ -109,7 +109,7 @@
 			\b
 		</button>
 
-		<span class="px-1.5 text-gray-400 font-mono" data-testid="search-match-count">
+		<span class="px-1.5 text-[11px] text-zinc-400 font-mono tabular-nums" data-testid="search-match-count">
 			{matchCount > 0 ? `${matchIndex + 1}/${matchCount}` : '0/0'}
 		</span>
 
@@ -117,15 +117,11 @@
 			type="button"
 			aria-label="Previous match"
 			title="Previous match (Shift+Enter)"
-			class="p-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700"
+			class="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-white/10 bg-transparent text-zinc-400 hover:bg-white/5 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			on:click={() => emitSearch('previous', false)}
 		>
-			<svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-				<path
-					fill-rule="evenodd"
-					d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"
-					clip-rule="evenodd"
-				/>
+			<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="m18 15-6-6-6 6" />
 			</svg>
 		</button>
 
@@ -133,15 +129,11 @@
 			type="button"
 			aria-label="Next match"
 			title="Next match (Enter)"
-			class="p-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700"
+			class="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-white/10 bg-transparent text-zinc-400 hover:bg-white/5 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			on:click={() => emitSearch('next', false)}
 		>
-			<svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-				<path
-					fill-rule="evenodd"
-					d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-					clip-rule="evenodd"
-				/>
+			<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="m6 9 6 6 6-6" />
 			</svg>
 		</button>
 
@@ -150,15 +142,12 @@
 			data-testid="search-close-btn"
 			aria-label="Close search"
 			title="Close search (Esc)"
-			class="p-1 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 ml-auto"
+			class="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-white/10 bg-transparent text-zinc-400 hover:bg-white/5 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 ml-auto"
 			on:click={() => dispatch('close')}
 		>
-			<svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-				<path
-					fill-rule="evenodd"
-					d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-					clip-rule="evenodd"
-				/>
+			<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M18 6 6 18" />
+				<path d="m6 6 12 12" />
 			</svg>
 		</button>
 	</div>

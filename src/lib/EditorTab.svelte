@@ -159,25 +159,25 @@
 	$: byteCount = new TextEncoder().encode(content || '').length;
 </script>
 
-<div class="flex flex-col gap-2 text-xs text-gray-100" data-testid="editor-tab">
-	<div class="flex items-center justify-between">
-		<h1 class="text-base font-bold flex items-center gap-1.5">
-			<i class="fas fa-code text-sky-400" aria-hidden="true"></i>
+<div class="flex flex-col gap-2.5 text-xs text-zinc-200" data-testid="editor-tab">
+	<div class="flex items-center justify-between pr-8">
+		<h1 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+			<i class="fas fa-code text-zinc-400 text-xs" aria-hidden="true"></i>
 			<span>Editor</span>
 			{#if dirty}<span class="text-amber-400" title="Unsaved changes">*</span>{/if}
 		</h1>
 		<div class="flex items-center gap-1">
 			<button
 				type="button"
-				class="px-1.5 py-0.5 rounded bg-neutral-700 hover:bg-neutral-500 text-gray-200"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-[11px] font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				data-testid="editor-new-btn"
 				on:click={handleNew}
 			>
-				<i class="fas fa-plus mr-0.5" aria-hidden="true"></i>New
+				<i class="fas fa-plus text-[10px] mr-1" aria-hidden="true"></i>New
 			</button>
 			<button
 				type="button"
-				class="px-1.5 py-0.5 rounded bg-neutral-700 hover:bg-neutral-500 text-gray-200"
+				class="h-7 px-2 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-[11px] font-medium text-zinc-300 hover:text-white transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				data-testid="editor-expand-btn"
 				aria-label={expanded ? 'Collapse editor' : 'Expand editor'}
 				on:click={() => {
@@ -189,7 +189,7 @@
 		</div>
 	</div>
 
-	<div class="flex items-center gap-1">
+	<div class="flex items-center gap-1.5">
 		<input
 			type="text"
 			placeholder="File path or filename (e.g. runme.sh)"
@@ -197,13 +197,13 @@
 			data-testid="editor-path-input"
 			bind:value={filePath}
 			on:input={handlePathInput}
-			class="flex-1 min-w-0 bg-neutral-700 border border-neutral-500 rounded px-2 py-1 text-xs font-mono text-gray-100 placeholder-gray-400"
+			class="flex-1 min-w-0 rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs font-mono text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 		/>
 		<button
 			type="button"
 			aria-label="Open file"
 			data-testid="editor-open-btn"
-			class="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-500 text-gray-100 shrink-0"
+			class="h-8 px-3 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-xs font-medium text-zinc-200 shrink-0 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			on:click={handleOpen}
 		>
 			Open
@@ -211,12 +211,12 @@
 	</div>
 
 	{#if statusError}
-		<div class="p-1.5 rounded bg-red-900/70 border border-red-600 text-red-100 text-[11px]" role="alert">
+		<div class="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-[11px] leading-relaxed text-rose-300" role="alert">
 			{statusError}
 		</div>
 	{/if}
 	{#if statusMessage}
-		<div class="p-1.5 rounded bg-emerald-900/50 border border-emerald-600 text-emerald-100 text-[11px]" role="status">
+		<div class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] leading-relaxed text-emerald-300 break-all" role="status">
 			{statusMessage}
 		</div>
 	{/if}
@@ -232,41 +232,42 @@
 		on:keydown={handleEditorKeydown}
 		spellcheck="false"
 		placeholder="#!/bin/sh&#10;echo 'Hello WebVM'"
-		class="w-full {expanded ? 'h-96' : 'h-56'} bg-neutral-800 border border-neutral-500 rounded p-2 font-mono text-xs text-gray-100 resize-y focus:outline-none focus:border-sky-400 disabled:opacity-50"
+		class="w-full {expanded ? 'h-96' : 'h-56'} rounded-xl border border-white/10 bg-zinc-950/60 p-3 font-mono text-xs text-zinc-200 placeholder:text-zinc-500 resize-y scrollbar transition-colors focus:border-white/20 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
 	></textarea>
 
-	<div class="flex items-center justify-between text-[10px] text-gray-400" data-testid="editor-status">
+	<div class="flex items-center justify-between text-[10px] font-mono text-zinc-400 px-0.5" data-testid="editor-status">
 		<span>Lines: {lineCount}</span>
 		<span>{byteCount} B</span>
 	</div>
 
-	<div class="flex flex-wrap items-center gap-1">
+	<div class="flex flex-wrap items-center gap-1.5">
 		<button
 			type="button"
 			data-testid="editor-save-btn"
-			class="flex-1 px-2 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-white font-medium flex items-center justify-center gap-1"
+			class="flex-1 h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			on:click={handleSave}
 		>
-			<i class="fas fa-floppy-disk" aria-hidden="true"></i>
+			<i class="fas fa-floppy-disk text-xs" aria-hidden="true"></i>
 			<span>Save</span>
 		</button>
 		<button
 			type="button"
 			data-testid="editor-run-btn"
-			class="flex-1 px-2 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-medium flex items-center justify-center gap-1"
+			class="flex-1 h-8 px-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-medium flex items-center justify-center gap-1.5 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			on:click={handleRunInTerminal}
 		>
-			<i class="fas fa-play" aria-hidden="true"></i>
+			<i class="fas fa-play text-[10px]" aria-hidden="true"></i>
 			<span>Run in Terminal</span>
 		</button>
 		<button
 			type="button"
 			data-testid="editor-download-btn"
-			class="px-2 py-1.5 rounded bg-neutral-700 hover:bg-neutral-500 text-gray-100 flex items-center justify-center"
+			class="h-8 w-8 rounded-lg border border-white/10 bg-transparent hover:bg-white/5 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 			aria-label="Download file"
+			title="Download file"
 			on:click={handleDownload}
 		>
-			<i class="fas fa-download" aria-hidden="true"></i>
+			<i class="fas fa-download text-xs" aria-hidden="true"></i>
 		</button>
 	</div>
 </div>

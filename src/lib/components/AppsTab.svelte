@@ -188,21 +188,21 @@
 	}
 </script>
 
-<div class="flex flex-col gap-4 text-sm">
-	<h1 class="text-lg font-bold">Apps &amp; Preview</h1>
+<div class="flex flex-col gap-4 text-xs text-zinc-200">
+	<h1 class="text-sm font-semibold text-zinc-100 pr-8">Apps &amp; Preview</h1>
 
-	<div class="grid grid-cols-3 gap-1 bg-neutral-700 p-1 rounded" role="tablist" aria-label="Apps sections">
+	<div class="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-zinc-900/60 p-1" role="tablist" aria-label="Apps sections">
 		<button
 			type="button"
 			role="tab"
 			aria-selected={activeSubTab === 'catalog'}
 			data-testid="apps-subtab-catalog"
 			on:click={() => jumpToSection('catalog')}
-			class="py-1 px-1.5 rounded text-xs font-semibold transition-colors {activeSubTab === 'catalog'
-				? 'bg-sky-600 text-white'
-				: 'text-gray-300 hover:bg-neutral-600'}"
+			class="py-1.5 px-2 rounded-lg text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {activeSubTab === 'catalog'
+				? 'bg-white/10 text-white font-medium'
+				: 'text-zinc-400 hover:bg-white/5 hover:text-white font-normal'}"
 		>
-			<i class="fas fa-store mr-1" aria-hidden="true"></i>Catalog
+			<i class="fas fa-store text-[11px] mr-1" aria-hidden="true"></i>Catalog
 		</button>
 		<button
 			type="button"
@@ -210,12 +210,10 @@
 			aria-selected={activeSubTab === 'download'}
 			data-testid="apps-subtab-download"
 			on:click={() => jumpToSection('download')}
-			class="py-1 px-1.5 rounded text-xs font-semibold transition-colors {activeSubTab === 'download'
-				? 'bg-sky-600 text-white'
-				: 'text-gray-300 hover:bg-neutral-600'}"
-		>
-			<i class="fas fa-download mr-1" aria-hidden="true"></i>HTTP Fetch
-		</button>
+			class="py-1.5 px-2 rounded-lg text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {activeSubTab === 'download'
+				? 'bg-white/10 text-white font-medium'
+				: 'text-zinc-400 hover:bg-white/5 hover:text-white font-normal'}"
+		><i class="fas fa-download text-[11px] mr-1" aria-hidden="true"></i>HTTP Fetch</button>
 		<button
 			type="button"
 			role="tab"
@@ -225,62 +223,62 @@
 				jumpToSection('preview');
 				loadPreview(previewPath);
 			}}
-			class="py-1 px-1.5 rounded text-xs font-semibold transition-colors {activeSubTab === 'preview'
-				? 'bg-sky-600 text-white'
-				: 'text-gray-300 hover:bg-neutral-600'}"
+			class="py-1.5 px-2 rounded-lg text-xs transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20 {activeSubTab === 'preview'
+				? 'bg-white/10 text-white font-medium'
+				: 'text-zinc-400 hover:bg-white/5 hover:text-white font-normal'}"
 		>
-			<i class="fas fa-globe mr-1" aria-hidden="true"></i>Preview
+			<i class="fas fa-globe text-[11px] mr-1" aria-hidden="true"></i>Preview
 		</button>
 	</div>
 
-	<section bind:this={catalogSectionEl} data-testid="apps-section-catalog" class="flex flex-col gap-2">
-		<h2 class="text-xs font-semibold uppercase tracking-wide text-gray-300">App Catalog &amp; 1-Click Runner</h2>
-			<div class="flex gap-1">
+	<section bind:this={catalogSectionEl} data-testid="apps-section-catalog" class="flex flex-col gap-2.5">
+		<h2 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">App Catalog &amp; 1-Click Runner</h2>
+			<div class="flex gap-1.5">
 				<input
 					type="search"
 					aria-label="Search app catalog"
 					data-testid="app-catalog-search"
 					bind:value={searchQuery}
 					placeholder="Search apps, runtimes..."
-					class="flex-1 px-2 py-1 rounded bg-neutral-800 border border-neutral-500 text-gray-100 text-xs"
+					class="flex-1 rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 				/>
 			</div>
 
 			{#if catalogError}
-				<div role="alert" data-testid="catalog-error" class="text-xs text-red-300 bg-red-900/50 p-1.5 rounded">
+				<div role="alert" data-testid="catalog-error" class="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
 					{catalogError}
 				</div>
 			{/if}
 			{#if catalogStatus}
-				<div role="status" data-testid="catalog-status" class="text-xs text-emerald-300 bg-emerald-900/40 p-1.5 rounded">
+				<div role="status" data-testid="catalog-status" class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
 					{catalogStatus}
 				</div>
 			{/if}
 
-			<div class="flex flex-col gap-1.5 max-h-60 overflow-y-auto pr-0.5" data-testid="app-catalog-list">
+			<div class="flex flex-col gap-2 max-h-60 overflow-y-auto scrollbar pr-0.5" data-testid="app-catalog-list">
 				{#if filteredApps.length === 0}
-					<p class="text-xs text-gray-400 py-2">No matching apps found.</p>
+					<p class="text-[11px] leading-relaxed text-zinc-400 py-2">No matching apps found.</p>
 				{:else}
 					{#each filteredApps as app (app.id)}
 						<div
 							data-testid="app-card-{app.id}"
-							class="p-2 rounded bg-neutral-700/80 border border-neutral-500/50 flex flex-col gap-1"
+							class="p-2.5 rounded-xl border border-white/10 bg-zinc-900/60 flex flex-col gap-1.5"
 						>
 							<div class="flex items-center justify-between gap-2">
-								<span class="font-semibold text-xs text-white truncate">{app.name}</span>
-								<span class="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-sky-300 shrink-0">
+								<span class="font-semibold text-xs text-zinc-100 truncate">{app.name}</span>
+								<span class="text-[10px] font-mono px-1.5 py-0.5 rounded-md border border-white/10 bg-white/5 text-zinc-300 shrink-0">
 									{app.runtime}
 								</span>
 							</div>
-							<p class="text-[11px] text-gray-300 leading-snug">{app.description}</p>
+							<p class="text-[11px] leading-relaxed text-zinc-400">{app.description}</p>
 							<div class="flex justify-end mt-0.5">
 								<button
 									type="button"
 									data-testid="app-launch-{app.id}"
 									on:click={() => handleLaunchApp(app)}
-									class="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold"
+									class="h-7 px-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs text-xs font-medium transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 								>
-									<i class="fas fa-play mr-1" aria-hidden="true"></i>Launch
+									<i class="fas fa-play text-[10px] mr-1" aria-hidden="true"></i>Launch
 								</button>
 							</div>
 						</div>
@@ -289,12 +287,12 @@
 			</div>
 
 			<div class="flex items-center justify-between gap-2 text-xs">
-				<span class="text-gray-300">Category</span>
+				<span class="text-xs text-zinc-300">Category</span>
 				<select
 					aria-label="Filter by category"
 					data-testid="app-catalog-category"
 					bind:value={selectedCategory}
-					class="flex-1 px-1.5 py-1 rounded bg-neutral-800 border border-neutral-500 text-gray-100 text-xs"
+					class="flex-1 rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-200 transition-colors focus:border-white/20 focus:outline-none"
 				>
 					{#each APP_CATEGORIES as cat}
 						<option value={cat}>{cat}</option>
@@ -302,20 +300,20 @@
 				</select>
 			</div>
 
-			<div class="border-t border-neutral-500/60 pt-2 flex flex-col gap-1.5">
-				<div class="text-xs font-semibold text-gray-200">Workspace Scripts &amp; Binaries</div>
+			<div class="border-t border-white/5 pt-3 flex flex-col gap-2">
+				<div class="text-xs font-semibold text-zinc-200">Workspace Scripts &amp; Binaries</div>
 				{#if runnableFiles.length === 0}
-					<p class="text-[11px] text-gray-400">
+					<p class="text-[11px] leading-relaxed text-zinc-400">
 						Upload or download a script/i386 ELF binary to run it with 1 click.
 					</p>
 				{:else}
-					<ul class="flex flex-col gap-1 max-h-36 overflow-y-auto" data-testid="workspace-runnable-list">
+					<ul class="flex flex-col gap-1.5 max-h-36 overflow-y-auto scrollbar" data-testid="workspace-runnable-list">
 						{#each runnableFiles as entry (entry.path)}
-							<li class="flex items-center justify-between gap-2 bg-neutral-700/70 px-2 py-1 rounded text-xs">
-								<div class="truncate">
-									<span class="text-gray-100">{entry.path}</span>
+							<li class="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-zinc-900/60 px-2.5 py-1.5 text-xs">
+								<div class="min-w-0 flex-1">
+									<span class="font-mono text-[11px] text-zinc-200 break-all">{entry.path}</span>
 									{#if entry.elfArch}
-										<span class="ml-1 text-[10px] px-1 rounded bg-neutral-800 text-amber-300">
+										<span class="ml-1.5 text-[10px] font-mono px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-300">
 											{entry.elfArch}
 										</span>
 									{/if}
@@ -324,7 +322,7 @@
 									type="button"
 									data-testid="workspace-run-{entry.name}"
 									on:click={() => handleRunWorkspaceFile(entry)}
-									class="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold shrink-0"
+									class="h-7 px-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-[11px] font-medium shrink-0 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 								>
 									Run
 								</button>
@@ -335,16 +333,16 @@
 			</div>
 	</section>
 
-	<section bind:this={downloadSectionEl} data-testid="apps-section-download" class="border-t border-neutral-500/60 pt-3 flex flex-col gap-2">
-		<h2 class="text-xs font-semibold uppercase tracking-wide text-gray-300">Host HTTP / Package Downloader</h2>
-		<form on:submit|preventDefault={handleDownloadSubmit} class="flex flex-col gap-2 text-xs">
-			<div class="flex flex-col gap-1">
-				<span class="text-gray-300">Source Type</span>
+	<section bind:this={downloadSectionEl} data-testid="apps-section-download" class="border-t border-white/5 pt-3 flex flex-col gap-2.5">
+		<h2 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Host HTTP / Package Downloader</h2>
+		<form on:submit|preventDefault={handleDownloadSubmit} class="flex flex-col gap-2.5 text-xs">
+			<div class="flex flex-col gap-1.5">
+				<span class="text-xs text-zinc-300">Source Type</span>
 				<select
 					aria-label="Download Source Type"
 					data-testid="download-source-select"
 					bind:value={sourceType}
-					class="px-2 py-1 rounded bg-neutral-800 border border-neutral-500 text-gray-100"
+					class="rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-200 transition-colors focus:border-white/20 focus:outline-none"
 				>
 					<option value="auto">Auto / Direct URL (http/https)</option>
 					<option value="github">GitHub (URL or owner/repo[@ref][:path])</option>
@@ -353,68 +351,68 @@
 				</select>
 			</div>
 
-			<label class="flex flex-col gap-1">
-				<span class="text-gray-300">URL or Package Name</span>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-xs text-zinc-300">URL or Package Name</span>
 				<input
 					type="text"
 					data-testid="download-url-input"
 					bind:value={downloadUrl}
 					placeholder="https://example.com/app.tar.gz"
-					class="px-2 py-1 rounded bg-neutral-800 border border-neutral-500 text-gray-100"
+					class="rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs font-mono text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 				/>
 			</label>
 
-			<label class="flex flex-col gap-1">
-				<span class="text-gray-300">Save location in workspace (optional)</span>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-xs text-zinc-300">Save location in workspace (optional)</span>
 				<input
 					type="text"
 					data-testid="download-target-input"
 					bind:value={targetPath}
 					placeholder="tools/app.sh or folder"
-					class="px-2 py-1 rounded bg-neutral-800 border border-neutral-500 text-gray-100"
+					class="rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs font-mono text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 				/>
 			</label>
 
-			<label class="flex flex-col gap-1">
-				<span class="text-gray-300">Expected SHA-256 (optional)</span>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-xs text-zinc-300">Expected SHA-256 (optional)</span>
 				<input
 					type="text"
 					data-testid="download-sha256-input"
 					bind:value={expectedSha256}
 					placeholder="64-char hex digest"
-					class="px-2 py-1 rounded bg-neutral-800 border border-neutral-500 text-gray-100 font-mono"
+					class="rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs font-mono text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 				/>
 			</label>
 
-			<label class="flex flex-col gap-1">
-				<span class="text-gray-300">CORS Proxy Prefix (optional)</span>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-xs text-zinc-300">CORS Proxy Prefix (optional)</span>
 				<input
 					type="text"
 					data-testid="download-proxy-input"
 					bind:value={corsProxy}
 					placeholder="https://corsproxy.io/?"
-					class="px-2 py-1 rounded bg-neutral-800 border border-neutral-500 text-gray-100"
+					class="rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs font-mono text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 				/>
 			</label>
 
 			<div class="flex items-center justify-between gap-2 pt-0.5">
-				<label class="flex items-center gap-1.5 cursor-pointer">
-					<input type="checkbox" data-testid="download-exec-checkbox" bind:checked={makeExecutable} />
+				<label class="flex items-center gap-2 cursor-pointer text-xs text-zinc-300 select-none">
+					<input type="checkbox" data-testid="download-exec-checkbox" bind:checked={makeExecutable} class="h-3.5 w-3.5 rounded border border-white/20 bg-zinc-950 accent-zinc-200" />
 					<span>Stage +x</span>
 				</label>
-				<label class="flex items-center gap-1.5 cursor-pointer">
-					<input type="checkbox" data-testid="download-extract-checkbox" bind:checked={extractArchives} />
+				<label class="flex items-center gap-2 cursor-pointer text-xs text-zinc-300 select-none">
+					<input type="checkbox" data-testid="download-extract-checkbox" bind:checked={extractArchives} class="h-3.5 w-3.5 rounded border border-white/20 bg-zinc-950 accent-zinc-200" />
 					<span>Extract archives</span>
 				</label>
 			</div>
 
 			{#if downloadError}
-				<div role="alert" data-testid="download-error" class="text-red-300 bg-red-900/50 p-1.5 rounded">
+				<div role="alert" data-testid="download-error" class="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
 					{downloadError}
 				</div>
 			{/if}
 			{#if downloadStatus}
-				<div role="status" data-testid="download-status" class="text-emerald-300 bg-emerald-900/40 p-1.5 rounded break-all">
+				<div role="status" data-testid="download-status" class="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-mono text-emerald-300 break-all">
 					{downloadStatus}
 				</div>
 			{/if}
@@ -423,28 +421,26 @@
 				type="submit"
 				data-testid="download-submit-btn"
 				disabled={isDownloading}
-				class="py-1.5 px-3 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-60 text-white font-semibold"
-			>
-				{isDownloading ? 'Downloading...' : 'Download'}
-			</button>
+				class="h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs text-xs font-medium transition-all active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+			>{isDownloading ? 'Downloading...' : 'Download'}</button>
 
 			{#if $downloadHistory.length > 0}
-				<div class="border-t border-neutral-500/60 pt-2 flex flex-col gap-1">
+				<div class="border-t border-white/5 pt-2.5 flex flex-col gap-1.5">
 					<div class="flex items-center justify-between">
-						<span class="font-semibold text-gray-200">Recent Downloads</span>
+						<span class="text-xs font-semibold text-zinc-200">Recent Downloads</span>
 						<button
 							type="button"
 							on:click={clearDownloadHistory}
-							class="text-[11px] text-gray-300 hover:text-white underline"
+							class="text-[11px] text-zinc-400 hover:text-white transition-colors"
 						>
 							Clear
 						</button>
 					</div>
-					<ul class="flex flex-col gap-1 max-h-28 overflow-y-auto" data-testid="download-history-list">
+					<ul class="flex flex-col gap-1 max-h-28 overflow-y-auto scrollbar" data-testid="download-history-list">
 						{#each $downloadHistory as item (item.id)}
-							<li class="bg-neutral-700/70 px-2 py-1 rounded text-[11px] flex justify-between gap-2">
-								<span class="truncate">{item.resolvedUrl || item.url}</span>
-								<span class={item.status === 'success' ? 'text-emerald-400' : 'text-red-400'}>
+							<li class="rounded-xl border border-white/10 bg-zinc-900/60 px-2.5 py-1.5 text-[11px] flex items-center justify-between gap-2">
+								<span class="font-mono text-[10px] text-zinc-300 break-all">{item.resolvedUrl || item.url}</span>
+								<span class={item.status === 'success' ? 'text-emerald-400 shrink-0' : 'text-rose-400 shrink-0'}>
 									{item.status}
 								</span>
 							</li>
@@ -455,30 +451,30 @@
 		</form>
 	</section>
 
-	<section bind:this={previewSectionEl} data-testid="apps-section-preview" class="border-t border-neutral-500/60 pt-3 flex flex-col gap-2">
-		<h2 class="text-xs font-semibold uppercase tracking-wide text-gray-300">Local Web Preview</h2>
+	<section bind:this={previewSectionEl} data-testid="apps-section-preview" class="border-t border-white/5 pt-3 flex flex-col gap-2.5">
+		<h2 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Local Web Preview</h2>
 		<div class="flex flex-col gap-2 text-xs">
-			<div class="flex gap-1">
+			<div class="flex gap-1.5">
 				<input
 					type="text"
 					aria-label="Workspace HTML path"
 					data-testid="preview-path-input"
 					bind:value={previewPath}
 					placeholder="index.html"
-					class="flex-1 px-2 py-1 rounded bg-neutral-800 border border-neutral-500 text-gray-100"
+					class="flex-1 min-w-0 rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-xs font-mono text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-white/20 focus:outline-none"
 				/>
 				<button
 					type="button"
 					data-testid="preview-load-btn"
 					on:click={() => loadPreview(previewPath)}
-					class="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-semibold"
+					class="h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs text-xs font-medium shrink-0 transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				>
 					Preview
 				</button>
 			</div>
 
 			{#if previewError}
-				<div role="alert" data-testid="preview-error" class="text-red-300 bg-red-900/50 p-2 rounded">
+				<div role="alert" data-testid="preview-error" class="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
 					{previewError}
 				</div>
 			{:else if previewHtml}
@@ -487,10 +483,10 @@
 					title="Workspace Web Preview"
 					sandbox="allow-scripts"
 					srcdoc={previewHtml}
-					class="w-full h-64 rounded border border-neutral-500 bg-white"
+					class="w-full h-64 rounded-xl border border-white/10 bg-white"
 				></iframe>
 			{:else}
-				<p class="text-gray-400">Enter a workspace HTML file path (e.g. index.html) and click Preview.</p>
+				<p class="text-[11px] leading-relaxed text-zinc-400">Enter a workspace HTML file path (e.g. index.html) and click Preview.</p>
 			{/if}
 		</div>
 	</section>

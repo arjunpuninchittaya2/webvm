@@ -167,10 +167,10 @@
 	bind:this={sidebarRoot}
 	role="region"
 	aria-label="Sidebar"
-	class="relative z-30 flex flex-row {sideBarPinned && activeInfo ? 'w-[23.5rem]' : 'w-14'} h-full bg-neutral-700 shrink-0"
+	class="relative z-30 flex flex-row {sideBarPinned && activeInfo ? 'w-[23.5rem]' : 'w-14'} h-full bg-zinc-950 shrink-0"
 	on:mouseleave={hideInfo}
 >
-	<div class="flex flex-col shrink-0 w-14 text-gray-300">
+	<div class="flex flex-col shrink-0 w-14 py-1.5 px-1.5 gap-0.5 bg-zinc-950 border-r border-white/10 text-zinc-400 overflow-y-auto scrollbar">
 		{#each icons as i}
 			{#if i}
 				<Icon
@@ -188,16 +188,16 @@
 	</div>
 	<aside
 		aria-label="Sidebar panel"
-		class="relative flex flex-col gap-5 shrink-0 w-80 h-full z-30 p-2 bg-neutral-600 text-gray-100 opacity-95 overflow-y-auto scrollbar"
+		class="relative flex flex-col gap-4 shrink-0 w-80 h-full z-30 p-3 bg-zinc-900/95 backdrop-blur-md border-r border-white/10 text-zinc-200 overflow-y-auto scrollbar {sideBarPinned ? '' : 'shadow-2xl'}"
 		class:hidden={!activeInfo}
 		on:mouseenter={handleMouseEnterPanel}
 	>
-		<div class="absolute right-2 top-2">
+		<div class="absolute right-2.5 top-2.5 z-10">
 			<SmallButton
 				buttonIcon="fa-solid fa-thumbtack"
 				clickHandler={toggleSidebarPin}
 				buttonTooltip={sideBarPinned ? "Unpin Sidebar" : "Pin Sidebar"}
-				bgColor={sideBarPinned ? "bg-neutral-500" : "bg-neutral-700"}
+				active={sideBarPinned}
 			/>
 		</div>
 		{#if activeInfo === 'Information'}
@@ -254,16 +254,27 @@
 			<p>TODO: {activeInfo}</p>
 		{/if}
 
-		<div class="mt-auto text-sm text-gray-300">
-			<div class="pt-1 pb-1">
-				<a href="https://cheerpx.io/" target="_blank" rel="noopener noreferrer">
+		<div class="mt-auto pt-3 border-t border-white/5 text-[11px] leading-relaxed text-zinc-400 space-y-1.5">
+			<div>
+				<a
+					href="https://cheerpx.io/"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="inline-flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
+				>
 					<span>Powered by CheerpX</span>
-					<img src="assets/cheerpx.svg" alt="CheerpX Logo" class="w-6 h-6 inline-block">
+					<img src="assets/cheerpx.svg" alt="CheerpX Logo" class="w-4 h-4 inline-block opacity-85" />
 				</a>
 			</div>
-			<hr class="border-t border-solid border-gray-300">
-			<div class="pt-1 pb-1">
-				<a href="https://leaningtech.com/" target="_blank" rel="noopener noreferrer">© 2022-2025 Leaning Technologies</a>
+			<div class="pt-1.5 border-t border-white/5">
+				<a
+					href="https://leaningtech.com/"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="text-zinc-500 hover:text-zinc-300 transition-colors"
+				>
+					© 2022-2025 Leaning Technologies
+				</a>
 			</div>
 		</div>
 	</aside>
