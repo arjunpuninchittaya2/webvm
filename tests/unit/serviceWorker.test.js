@@ -25,6 +25,7 @@ function loadServiceWorkerInContext({
 	fetchImpl = vi.fn(),
 	windowObj = undefined,
 	navigatorObj = undefined,
+	registrationObj = undefined,
 	withModule = false
 } = {}) {
 	const code = fs.readFileSync(SW_PATH, 'utf8');
@@ -49,7 +50,8 @@ function loadServiceWorkerInContext({
 		clients: { claim: vi.fn(async () => {}) },
 		addEventListener: vi.fn((type, fn) => {
 			listeners.set(type, fn);
-		})
+		}),
+		...(registrationObj !== undefined ? { registration: registrationObj } : {})
 	};
 
 	const consoleMock = {
@@ -248,5 +250,175 @@ describe('serviceWorker.js', () => {
 		const failRegister = vi.fn().mockRejectedValue(new Error('SW blocked'));
 		context.navigator.serviceWorker.register = failRegister;
 		await expect(context.doRegister()).resolves.toBeUndefined();
+	});
+
+	it('caches subpath /webvm/_app/immutable/* assets and handles /webvm/ and /webvm navigations under scoped deployment', async () => {
+		let navAttempt = 0;
+		const fetchImpl = vi.fn(async (req) => {
+			if (req.url.includes('/_app/immutable/')) {
+				return new Response('export const x = 1;', { status: 200 });
+			}
+			navAttempt++;
+			if (navAttempt === 1) {
+				return new Response('<html>subpath online</html>', { status: 200 });
+			}
+			throw new Error('offline');
+		});
+
+		const { context, moduleExports, cacheMap } = loadServiceWorkerInContext({
+			origin: 'https://arjunpuninchittaya2.github.io',
+			registrationObj: { scope: 'https://arjunpuninchittaya2.github.io/webvm/' },
+			fetchImpl,
+			withModule: true
+		});
+
+		// Immutable asset under /webvm/_app/immutable/ is cache-first with COI headers
+		const assetUrl = 'https://arjunpuninchittaya2.github.io/webvm/_app/immutable/chunks/chunk.js';
+		const res1 = await context.handleFetch(new Request(assetUrl, { method: 'GET' }));
+		expect(await res1.text()).toBe('export const x = 1;');
+		expect(res1.headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
+		expect(res1.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
+		expect(res1.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+		expect(cacheMap.get(moduleExports.CACHE_NAME).store.has(assetUrl)).toBe(true);
+
+		const res2 = await context.handleFetch(new Request(assetUrl, { method: 'GET' }));
+		expect(await res2.text()).toBe('export const x = 1;');
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+		// Subpath root /webvm/ uses network-first with offline cache fallback
+		const navReq = new Request('https://arjunpuninchittaya2.github.io/webvm/', { method: 'GET' });
+		const navOnline = await context.handleFetch(navReq);
+		expect(await navOnline.text()).toBe('<html>subpath online</html>');
+		expect(navOnline.headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
+
+		const navOffline = await context.handleFetch(navReq);
+		expect(await navOffline.text()).toBe('<html>subpath online</html>');
+		expect(navOffline.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
+
+		// Relative scope without trailing slash ('/webvm') handles both /webvm and /webvm/
+		let relAttempt = 0;
+		const relFetchImpl = vi.fn(async () => {
+			relAttempt++;
+			if (relAttempt === 1) {
+				return new Response('<html>no-slash online</html>', { status: 200 });
+			}
+			throw new Error('offline');
+		});
+		const relSw = loadServiceWorkerInContext({
+			origin: 'https://arjunpuninchittaya2.github.io',
+			registrationObj: { scope: '/webvm' },
+			fetchImpl: relFetchImpl
+		});
+		const noSlashReq = new Request('https://arjunpuninchittaya2.github.io/webvm', { method: 'GET' });
+		const noSlashOnline = await relSw.context.handleFetch(noSlashReq);
+		expect(await noSlashOnline.text()).toBe('<html>no-slash online</html>');
+		const noSlashOffline = await relSw.context.handleFetch(noSlashReq);
+		expect(await noSlashOffline.text()).toBe('<html>no-slash online</html>');
+		expect(noSlashOffline.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+	});
+
+	it('bypasses CacheStorage for GitHub split .ext2 chunks and .meta files while preserving COOP/COEP/CORP headers', async () => {
+		const fetchImpl = vi.fn(async (req) => new Response(`body:${req.url}`, { status: 200 }));
+		const { context, cachesMock, cacheMap } = loadServiceWorkerInContext({
+			origin: 'https://arjunpuninchittaya2.github.io',
+			registrationObj: { scope: 'https://arjunpuninchittaya2.github.io/webvm/' },
+			fetchImpl
+		});
+
+		const chunkUrls = [
+			'https://arjunpuninchittaya2.github.io/webvm/debian_mini.ext2.c000000.txt',
+			'https://arjunpuninchittaya2.github.io/webvm/debian_mini.ext2.meta',
+			'https://arjunpuninchittaya2.github.io/webvm/Debian.EXT2.C000A1F.TXT?v=2',
+			'https://arjunpuninchittaya2.github.io/webvm/Debian.Ext2.Meta?cb=123'
+		];
+
+		for (const url of chunkUrls) {
+			expect(context.shouldBypassCache(new Request(url, { method: 'GET' }), new URL(url))).toBe(true);
+			const res = await context.handleFetch(new Request(url, { method: 'GET' }));
+			expect(await res.text()).toBe(`body:${url}`);
+			expect(res.headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
+			expect(res.headers.get('Cross-Origin-Embedder-Policy')).toBe('require-corp');
+			expect(res.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+		}
+
+		// Repeat request must hit network again and never open or write CacheStorage
+		await context.handleFetch(new Request(chunkUrls[0], { method: 'GET' }));
+		expect(fetchImpl).toHaveBeenCalledTimes(5);
+		expect(cachesMock.open).not.toHaveBeenCalled();
+		expect(cacheMap.size).toBe(0);
+	});
+
+	it('guards doRegister() against duplicate reloads across installed -> activated statechange and active registration', async () => {
+		const reloadMock = vi.fn();
+		const regListeners = {};
+		const installingListeners = {};
+		const installingWorker = {
+			state: 'installing',
+			addEventListener: vi.fn((type, fn) => {
+				installingListeners[type] = fn;
+			})
+		};
+		const registration = {
+			scope: 'https://arjunpuninchittaya2.github.io/webvm/',
+			installing: installingWorker,
+			active: null,
+			addEventListener: vi.fn((type, fn) => {
+				regListeners[type] = fn;
+			})
+		};
+		const registerMock = vi.fn(async () => registration);
+
+		loadServiceWorkerInContext({
+			origin: 'https://arjunpuninchittaya2.github.io',
+			windowObj: {
+				crossOriginIsolated: false,
+				isSecureContext: true,
+				document: { currentScript: { src: 'https://arjunpuninchittaya2.github.io/webvm/serviceWorker.js' } },
+				location: { reload: reloadMock }
+			},
+			navigatorObj: {
+				serviceWorker: { register: registerMock, controller: null }
+			}
+		});
+
+		await new Promise((r) => setTimeout(r, 0));
+		expect(registerMock).toHaveBeenCalledTimes(1);
+		expect(reloadMock).not.toHaveBeenCalled();
+
+		// Trigger updatefound then rapid state transitions installed -> activating -> activated
+		regListeners.updatefound();
+		for (const nextState of ['installed', 'activating', 'activated']) {
+			installingWorker.state = nextState;
+			installingListeners.statechange();
+		}
+		expect(reloadMock).toHaveBeenCalledTimes(1);
+
+		// Also verify case where updatefound has no installing worker AND registration.active is set
+		const reloadMock2 = vi.fn();
+		const regListeners2 = {};
+		const registration2 = {
+			scope: 'https://arjunpuninchittaya2.github.io/webvm/',
+			installing: null,
+			active: {},
+			addEventListener: vi.fn((type, fn) => {
+				regListeners2[type] = fn;
+			})
+		};
+		loadServiceWorkerInContext({
+			origin: 'https://arjunpuninchittaya2.github.io',
+			windowObj: {
+				crossOriginIsolated: false,
+				isSecureContext: true,
+				document: { currentScript: { src: 'https://arjunpuninchittaya2.github.io/webvm/serviceWorker.js' } },
+				location: { reload: reloadMock2 }
+			},
+			navigatorObj: {
+				serviceWorker: { register: vi.fn(async () => registration2), controller: null }
+			}
+		});
+		await new Promise((r) => setTimeout(r, 0));
+		expect(reloadMock2).toHaveBeenCalledTimes(1);
+		regListeners2.updatefound();
+		expect(reloadMock2).toHaveBeenCalledTimes(1);
 	});
 });

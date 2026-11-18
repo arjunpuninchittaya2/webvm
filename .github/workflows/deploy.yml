@@ -121,29 +121,22 @@ jobs:
           docker run --dns 8.8.8.8 --dns 8.8.4.4 -d $TAG
           echo "CONTAINER_ID=$(sudo docker ps -aq)" >> $GITHUB_ENV
 
-      # We extract the CMD, we first need to figure whether the Dockerfile uses CMD or an Entrypoint.
-      - name: Extracting CMD / Entrypoint and args
+      # Extract CMD (string), ARGS (string[]), ENV (string[]), and CWD (string) using Docker's Entrypoint + Cmd semantics.
+      - name: Extracting CMD, Entrypoint, args, env, and cwd
         shell: bash
         run: |
-          cmd=$(sudo docker inspect --format='{{json .Config.Cmd}}' $CONTAINER_ID)
-          entrypoint=$(sudo docker inspect --format='{{json .Config.Entrypoint}}' $CONTAINER_ID)
-          if [[ $entrypoint != "null" && $cmd != "null" ]]; then
-            echo "CMD=$( sudo docker inspect $CONTAINER_ID | jq --compact-output '.[0].Config.Entrypoint' )" >> $GITHUB_ENV
-            echo "ARGS=$( sudo docker inspect $CONTAINER_ID | jq --compact-output '.[0].Config.Cmd' )" >> $GITHUB_ENV
-          elif [[ $cmd != "null" ]]; then
-            echo "CMD=$( sudo docker inspect $CONTAINER_ID | jq --compact-output '.[0].Config.Cmd[:1]' )" >> $GITHUB_ENV
-            echo "ARGS=$( sudo docker inspect $CONTAINER_ID | jq --compact-output '.[0].Config.Cmd[1:]' )" >> $GITHUB_ENV
-          else
-            echo "CMD=$( sudo docker inspect $CONTAINER_ID | jq --compact-output '.[0].Config.Entrypoint[:1]' )" >> $GITHUB_ENV
-            echo "ARGS=$( sudo docker inspect $CONTAINER_ID | jq --compact-output '.[0].Config.Entrypoint[1:]' )" >> $GITHUB_ENV
-          fi
-
-      # We extract the ENV, CMD/Entrypoint and cwd from the Docker container with docker inspect.
-      - name: Extracting env, args and cwd.
-        shell: bash
-        run: |
-          echo "ENV=$( sudo docker inspect $CONTAINER_ID | jq --compact-output  '.[0].Config.Env' )" >> $GITHUB_ENV
-          echo "CWD=$( sudo docker inspect $CONTAINER_ID | jq --compact-output '.[0].Config.WorkingDir' )" >> $GITHUB_ENV
+          inspect_json=$(sudo docker inspect "$CONTAINER_ID")
+          argv=$(printf '%s' "$inspect_json" | jq --compact-output '((.[0].Config.Entrypoint // []) + (.[0].Config.Cmd // []))')
+          cmd=$(printf '%s' "$argv" | jq --compact-output '(.[0] // "/bin/bash")')
+          args=$(printf '%s' "$argv" | jq --compact-output '(.[1:] // [])')
+          env_vars=$(printf '%s' "$inspect_json" | jq --compact-output '(.[0].Config.Env // [])')
+          cwd=$(printf '%s' "$inspect_json" | jq --compact-output '(if (.[0].Config.WorkingDir // "") == "" then "/" else .[0].Config.WorkingDir end)')
+          {
+            echo "CMD=$cmd"
+            echo "ARGS=$args"
+            echo "ENV=$env_vars"
+            echo "CWD=$cwd"
+          } >> "$GITHUB_ENV"
 
       # We create and mount the base ext2 image to extract the Docker container's filesystem its contents into.
       - name: Create ext2 image.
@@ -177,12 +170,38 @@ jobs:
       #   4. Replace ENV with the container's environment values.
       #   5. Replace CWD with the container's current working directory.
       - name: Adjust config_github_terminal.js
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          CMD: ${{ env.CMD }}
+          ARGS: ${{ env.ARGS }}
+          ENV: ${{ env.ENV }}
+          CWD: ${{ env.CWD }}
         run: |
-          sed -i 's#IMAGE_URL#"${{ env.IMAGE_NAME }}"#g' config_github_terminal.js
-          sed -i 's#CMD#${{ env.CMD }}#g' config_github_terminal.js
-          sed -i 's#ARGS#${{ env.ARGS }}#g' config_github_terminal.js
-          sed -i 's#ENV#${{ env.ENV }}#g' config_github_terminal.js
-          sed -i 's#CWD#${{ env.CWD }}#g' config_github_terminal.js
+          node -e '
+            const fs = require("node:fs");
+            const path = "config_github_terminal.js";
+            const src = fs.readFileSync(path, "utf8");
+            const imageUrl = process.env.IMAGE_NAME;
+            const cmd = JSON.parse(process.env.CMD);
+            const args = JSON.parse(process.env.ARGS);
+            const env = JSON.parse(process.env.ENV);
+            const cwd = JSON.parse(process.env.CWD);
+            if (typeof imageUrl !== "string" || !imageUrl) throw new Error("IMAGE_NAME must be a non-empty string");
+            if (typeof cmd !== "string" || !cmd) throw new Error("CMD must be a non-empty string");
+            if (!Array.isArray(args) || !args.every((v) => typeof v === "string")) throw new Error("ARGS must be an array of strings");
+            if (!Array.isArray(env) || !env.every((v) => typeof v === "string")) throw new Error("ENV must be an array of strings");
+            if (typeof cwd !== "string" || !cwd) throw new Error("CWD must be a non-empty string");
+            const replacements = {
+              IMAGE_URL: JSON.stringify(imageUrl),
+              CMD: JSON.stringify(cmd),
+              ARGS: JSON.stringify(args),
+              ENV: JSON.stringify(env),
+              CWD: JSON.stringify(cwd),
+            };
+            const out = src.replace(/\b(IMAGE_URL|CMD|ARGS|ENV|CWD)\b/g, (m) => replacements[m]);
+            fs.writeFileSync(path, out, "utf8");
+          '
+          node --check config_github_terminal.js
 
       - name: Build NPM package
         run: |
@@ -192,7 +211,7 @@ jobs:
       # Move required files for gh-pages deployment to the deployment directory $DEPLOY_DIR.
       - name: Copy build
         run: |
-          rm build/alpine.html
+          rm -rf build/alpine.html build/alpine
           sudo mv build/* $DEPLOY_DIR/
 
       # We generate index.list files for our httpfs to function properly.

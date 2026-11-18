@@ -144,6 +144,7 @@ export function createVmManager(configObj, options = {}) {
 	let lastKmsHeight = 0;
 	let tabSeq = 1;
 	let primaryBootGen = 0;
+	let initPromise = null;
 
 	const tabs = new Map();
 	const cleanups = [];
@@ -1131,6 +1132,7 @@ export function createVmManager(configObj, options = {}) {
 					gid: tab.gid
 				})
 			);
+			if (disposed) return { status: 1 };
 			const code = typeof res?.status === 'number' ? res.status : 0;
 			updateSession(id, {
 				status: code === 0 ? 'exited' : 'error',
@@ -1139,6 +1141,7 @@ export function createVmManager(configObj, options = {}) {
 			tab.batcher.writeText(`\r\n[Task exited with code ${code}]\r\n`);
 			return { status: code };
 		} catch (err) {
+			if (disposed) return { status: 1 };
 			updateSession(id, { status: 'error', exitCode: 1 });
 			tab.batcher.writeText(`\r\n[Task failed: ${err?.message || err}]\r\n`);
 			return { status: 1 };
@@ -1264,10 +1267,12 @@ export function createVmManager(configObj, options = {}) {
 				const res = await runSerializedCommand(id, () =>
 					cx.run(tab.cmd, tab.args, { cwd: tab.cwd, env: tab.env, uid: tab.uid, gid: tab.gid })
 				);
+				if (disposed) return;
 				const code = typeof res?.status === 'number' ? res.status : 0;
 				updateSession(id, { status: code === 0 ? 'exited' : 'error', exitCode: code });
 				tab.batcher.writeText(`\r\n[Task exited with code ${code}]\r\n`);
 			} catch (err) {
+				if (disposed) return;
 				updateSession(id, { status: 'error', exitCode: 1 });
 				tab.batcher.writeText(`\r\n[Task failed: ${err?.message || err}]\r\n`);
 			}
@@ -1434,37 +1439,52 @@ export function createVmManager(configObj, options = {}) {
 
 	async function initCheerpX(cheerpxImportPromise = null) {
 		if (disposed) return;
+		if (initPromise) return initPromise;
 		const gen = ++primaryBootGen;
 		const primaryTab = tabs.get('tab-1');
-		try {
-			bootState.set({
-				phase: 'runtime',
-				progress: 20,
-				message: 'Loading CheerpX virtualization runtime...',
-				ready: false,
-				error: null
-			});
-			const CheerpX = CheerpXMod || (await (cheerpxImportPromise || import('@leaningtech/cheerpx')));
-			CheerpXMod = CheerpX;
-			if (disposed) return;
+		initPromise = (async () => {
+			try {
+				bootState.set({
+					phase: 'runtime',
+					progress: 20,
+					message: 'Loading CheerpX virtualization runtime...',
+					ready: false,
+					error: null
+				});
+				const CheerpX = CheerpXMod || (await (cheerpxImportPromise || import('@leaningtech/cheerpx')));
+				CheerpXMod = CheerpX;
+				if (disposed) return;
 
-			bootState.set({
-				phase: 'devices',
-				progress: 40,
-				message: 'Initializing disk & filesystem devices...',
-				ready: false,
-				error: null
-			});
+				bootState.set({
+					phase: 'devices',
+					progress: 40,
+					message: 'Initializing disk & filesystem devices...',
+					ready: false,
+					error: null
+				});
 
-			const [blockDevice, createdCache, createdWorkspace, webDevice, documentsDevice, createdDataDevice] = await Promise.all([
-				createBlockDevice(CheerpX),
-				CheerpX.IDBDevice.create(cacheId),
-				CheerpX.IDBDevice.create(workspaceCacheId),
-				CheerpX.WebDevice.create(''),
-				CheerpX.WebDevice.create('documents'),
-				CheerpX.DataDevice.create()
-			]);
-			if (disposed) return;
+				// CheerpX 1.4.0 sets an internal `aY = 1` flag synchronously on the first CheerpOS device
+				// (.create on IDBDevice/WebDevice/DataDevice) while asynchronously loading cheerpOS.js.
+				// Await the first IDBDevice alongside the independent block device using allSettled so
+				// cheerpOS.js finishes loading before any subsequent CheerpOS device .create() runs,
+				// even if createBlockDevice rejects early before a retry.
+				const [blockRes, cacheRes] = await Promise.allSettled([
+					createBlockDevice(CheerpX),
+					CheerpX.IDBDevice.create(cacheId)
+				]);
+				if (disposed) return;
+				if (blockRes.status === 'rejected') throw blockRes.reason;
+				if (cacheRes.status === 'rejected') throw cacheRes.reason;
+				const blockDevice = blockRes.value;
+				const createdCache = cacheRes.value;
+
+				const [createdWorkspace, webDevice, documentsDevice, createdDataDevice] = await Promise.all([
+					CheerpX.IDBDevice.create(workspaceCacheId),
+					CheerpX.WebDevice.create('.'),
+					CheerpX.WebDevice.create('documents'),
+					CheerpX.DataDevice.create()
+				]);
+				if (disposed) return;
 
 			blockCache = createdCache;
 			workspaceDevice = createdWorkspace;
@@ -1500,12 +1520,14 @@ export function createVmManager(configObj, options = {}) {
 				error: null
 			});
 
+			let createdCx = null;
 			try {
-				cx = await CheerpX.Linux.create({
+				createdCx = await CheerpX.Linux.create({
 					mounts: mountPoints,
 					networkInterface
 				});
 			} catch (e) {
+				if (disposed) return;
 				primaryTab?.batcher?.printMessage(errorMessage);
 				primaryTab?.batcher?.printMessage([String(e)]);
 				updateSession('tab-1', { status: 'error', exitCode: 1 });
@@ -1522,12 +1544,14 @@ export function createVmManager(configObj, options = {}) {
 
 			if (disposed) {
 				try {
-					cx.delete?.();
+					createdCx?.delete?.();
 				} catch {
 					// Ignore
 				}
+				cx = null;
 				return;
 			}
+			cx = createdCx;
 
 			cx.registerCallback('cpuActivity', telemetry.cpuCallback);
 			cx.registerCallback('diskActivity', telemetry.hddCallback);
@@ -1556,19 +1580,25 @@ export function createVmManager(configObj, options = {}) {
 			});
 
 			void runPrimaryLoop(gen);
-		} catch (e) {
-			if (disposed) return;
-			primaryTab?.batcher?.printMessage(unexpectedErrorMessage);
-			primaryTab?.batcher?.printMessage([String(e)]);
-			updateSession('tab-1', { status: 'error', exitCode: 1 });
-			vmState.set('error');
-			bootState.set({
-				phase: 'error',
-				progress: 0,
-				message: e?.message || String(e),
-				ready: false,
-				error: e?.message || String(e)
-			});
+			} catch (e) {
+				if (disposed) return;
+				primaryTab?.batcher?.printMessage(unexpectedErrorMessage);
+				primaryTab?.batcher?.printMessage([String(e)]);
+				updateSession('tab-1', { status: 'error', exitCode: 1 });
+				vmState.set('error');
+				bootState.set({
+					phase: 'error',
+					progress: 0,
+					message: e?.message || String(e),
+					ready: false,
+					error: e?.message || String(e)
+				});
+			}
+		})();
+		try {
+			return await initPromise;
+		} finally {
+			initPromise = null;
 		}
 	}
 
@@ -1606,17 +1636,10 @@ export function createVmManager(configObj, options = {}) {
 					CheerpXMod ? Promise.resolve(CheerpXMod) : import('@leaningtech/cheerpx')
 				]);
 
-		const cheerpxPromise = options.loadDeps
-			? loadDynamicDeps.then((r) => r.CheerpX)
-			: loadDynamicDeps.then((results) => {
-					const cxRes = results[5];
-					if (cxRes.status === 'rejected') throw cxRes.reason;
-					return cxRes.value;
-				});
-
 		const depResults = await loadDynamicDeps;
 		if (disposed) return;
 
+		let cheerpxPromise;
 		if (options.loadDeps) {
 			TerminalCtor = depResults.Terminal;
 			FitAddonCtor = depResults.FitAddon;
@@ -1624,6 +1647,7 @@ export function createVmManager(configObj, options = {}) {
 			SearchAddonCtor = depResults.SearchAddon;
 			WebglAddonCtor = depResults.WebglAddon;
 			CheerpXMod = depResults.CheerpX || null;
+			cheerpxPromise = Promise.resolve(depResults.CheerpX);
 		} else {
 			if (depResults[0].status === 'fulfilled') TerminalCtor = depResults[0].value.Terminal;
 			if (depResults[1].status === 'fulfilled') FitAddonCtor = depResults[1].value.FitAddon;
@@ -1631,6 +1655,11 @@ export function createVmManager(configObj, options = {}) {
 			if (depResults[3].status === 'fulfilled') SearchAddonCtor = depResults[3].value.SearchAddon;
 			if (depResults[4].status === 'fulfilled') WebglAddonCtor = depResults[4].value.WebglAddon;
 			if (depResults[5].status === 'fulfilled') CheerpXMod = depResults[5].value;
+			cheerpxPromise =
+				depResults[5].status === 'fulfilled'
+					? Promise.resolve(depResults[5].value)
+					: Promise.reject(depResults[5].reason);
+			cheerpxPromise.catch(() => {});
 		}
 
 		const primaryTab = createTerminalInstance('tab-1', 'primary', {

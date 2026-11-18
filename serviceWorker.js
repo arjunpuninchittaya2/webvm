@@ -43,6 +43,24 @@ function isCacheable(r) {
 	return !cacheControl.includes("no-store");
 }
 
+function getScopePaths() {
+	const rawScope =
+		typeof self !== "undefined" && self.registration && self.registration.scope
+			? self.registration.scope
+			: "/";
+	const rawOrigin = typeof self !== "undefined" && self.location && self.location.origin;
+	const baseOrigin = rawOrigin && rawOrigin !== "null" ? rawOrigin : "https://localhost";
+	let scopePathname = "/";
+	try {
+		scopePathname = new URL(rawScope, baseOrigin).pathname || "/";
+	} catch {
+		scopePathname = "/";
+	}
+	const scopeWithSlash = scopePathname.endsWith("/") ? scopePathname : `${scopePathname}/`;
+	const scopeNoSlash = scopeWithSlash.length > 1 ? scopeWithSlash.slice(0, -1) : scopeWithSlash;
+	return { scopeWithSlash, scopeNoSlash };
+}
+
 function shouldBypassCache(request, url) {
 	if (request.method !== "GET") return true;
 	if (url.protocol !== "http:" && url.protocol !== "https:") return true;
@@ -50,6 +68,7 @@ function shouldBypassCache(request, url) {
 	const origin = typeof self !== "undefined" && self.location ? self.location.origin : url.origin;
 	if (url.origin !== origin) return true;
 	if (url.pathname.endsWith("/serviceWorker.js")) return true;
+	if (/\.ext2\.(?:c[0-9a-f]+\.txt|meta)$/i.test(url.pathname)) return true;
 	return false;
 }
 
@@ -88,7 +107,7 @@ async function handleFetch(request, event) {
 	const cache = await openAppCache();
 
 	// 1. Cache-first for immutable hashed SvelteKit bundles
-	if (url.pathname.startsWith("/_app/immutable/")) {
+	if (url.pathname.includes("/_app/immutable/")) {
 		if (cache) {
 			const cached = await cache.match(request);
 			if (cached) {
@@ -107,9 +126,12 @@ async function handleFetch(request, event) {
 	}
 
 	// 2. Network-first with cache fallback for HTML navigations
+	const { scopeWithSlash, scopeNoSlash } = getScopePaths();
 	const isNavigation =
 		request.mode === "navigate" ||
 		url.pathname === "/" ||
+		url.pathname === scopeWithSlash ||
+		url.pathname === scopeNoSlash ||
 		url.pathname.endsWith(".html");
 
 	if (isNavigation) {
@@ -197,6 +219,17 @@ async function doRegister() {
 	const swUrl =
 		(window.document && window.document.currentScript && window.document.currentScript.src) ||
 		"serviceWorker.js";
+	let reloaded = false;
+	function triggerReload() {
+		if (reloaded) return;
+		reloaded = true;
+		console.log("Reloading the page to transfer control to the Service Worker.");
+		try {
+			window.location.reload();
+		} catch (err) {
+			console.log("Service Worker failed reloading the page. ERROR:" + err);
+		}
+	}
 	try {
 		const registration = await navigator.serviceWorker.register(swUrl);
 		console.log("Service Worker registered", registration.scope);
@@ -206,33 +239,18 @@ async function doRegister() {
 			if (!needsCoiReload) return;
 			const installing = registration.installing;
 			if (!installing) {
-				console.log("Reloading the page to transfer control to the Service Worker.");
-				try {
-					window.location.reload();
-				} catch (err) {
-					console.log("Service Worker failed reloading the page. ERROR:" + err);
-				}
+				triggerReload();
 				return;
 			}
 			installing.addEventListener("statechange", () => {
 				if (installing.state === "installed" || installing.state === "activated") {
-					console.log("Reloading the page to transfer control to the Service Worker.");
-					try {
-						window.location.reload();
-					} catch (err) {
-						console.log("Service Worker failed reloading the page. ERROR:" + err);
-					}
+					triggerReload();
 				}
 			});
 		});
 		// When the registration is active, but it's not controlling the page, we reload the page to have it take control.
 		if (needsCoiReload && registration.active && !navigator.serviceWorker.controller) {
-			console.log("Reloading the page to transfer control to the Service Worker.");
-			try {
-				window.location.reload();
-			} catch (err) {
-				console.log("Service Worker failed reloading the page. ERROR:" + err);
-			}
+			triggerReload();
 		}
 	} catch (e) {
 		console.error("Service Worker failed to register:", e);
@@ -254,6 +272,7 @@ async function serviceWorkerRegister() {
 if (typeof module !== "undefined" && module.exports) {
 	module.exports = {
 		CACHE_NAME,
+		getScopePaths,
 		withCoiHeaders,
 		isCacheable,
 		shouldBypassCache,

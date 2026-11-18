@@ -16,7 +16,7 @@ import {
 import { settings, resetSettings } from '../../src/lib/stores/settings.js';
 import { displayConfig } from '../../src/lib/anthropic.js';
 
-function createFakeTerminalEnv({ webglShouldThrow = false, webglDisposeShouldThrow = false } = {}) {
+function createFakeTerminalEnv({ webglShouldThrow = false, webglDisposeShouldThrow = false, cheerpxOverrides = null } = {}) {
 	const createdTerms = [];
 	let contextLossCb = null;
 
@@ -160,7 +160,8 @@ function createFakeTerminalEnv({ webglShouldThrow = false, webglDisposeShouldThr
 		WebDevice: { create: vi.fn(async () => ({})) },
 		DataDevice: { create: vi.fn(async () => ({})) },
 		OverlayDevice: { create: vi.fn(async () => ({})) },
-		Linux: { create: vi.fn(async () => mockCx) }
+		Linux: { create: vi.fn(async () => mockCx) },
+		...(cheerpxOverrides || {})
 	};
 
 	return {
@@ -168,6 +169,7 @@ function createFakeTerminalEnv({ webglShouldThrow = false, webglDisposeShouldThr
 		mockCx,
 		cxReadSpy,
 		cloudCreate,
+		MockCheerpX,
 		triggerContextLoss: () => contextLossCb?.(),
 		loadDeps: async () => ({
 			Terminal: MockTerminal,
@@ -463,5 +465,274 @@ describe('vmManager.js lifecycle, WebGL fallback, KMS scaling, multi-tab & clean
 
 		manager.dispose();
 		expect(get(stickyModifiers)).toEqual(DEFAULT_STICKY_MODIFIERS);
+	});
+
+	function createCheerpOSRaceSimulator() {
+		let aY = 0;
+		let cheerpOSLoaded = false;
+		const callLog = [];
+
+		async function simulateCheerpOSGate(label, globalName) {
+			callLog.push(`start:${label}`);
+			if (aY === 0) {
+				// CheerpX 1.4.0 mutates aY synchronously before cheerpOS.js finishes loading
+				aY = 1;
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				cheerpOSLoaded = true;
+			} else if (!cheerpOSLoaded) {
+				throw new ReferenceError(`${globalName} is not defined`);
+			}
+			callLog.push(`end:${label}`);
+		}
+
+		return {
+			callLog,
+			cheerpxOverrides: {
+				GitHubDevice: {
+					create: vi.fn(async (url) => {
+						callLog.push(`github:${url}`);
+						return { kind: 'github', url };
+					})
+				},
+				IDBDevice: {
+					create: vi.fn(async (name) => {
+						await simulateCheerpOSGate(`idb:${name}`, 'CheerpJIndexedDBFolder');
+						return { kind: 'idb', name, reset: vi.fn() };
+					})
+				},
+				WebDevice: {
+					create: vi.fn(async (path) => {
+						await simulateCheerpOSGate(`web:${path}`, 'cheerpOSCreateWebFolder');
+						return { kind: 'web', path };
+					})
+				},
+				DataDevice: {
+					create: vi.fn(async () => {
+						await simulateCheerpOSGate('data', 'CheerpJDataFolder');
+						return { kind: 'data' };
+					})
+				}
+			}
+		};
+	}
+
+	it('boots GitHub mode safely without CheerpX 1.4.0 aY lazy-load race and uses WebDevice.create(".")', async () => {
+		const sim = createCheerpOSRaceSimulator();
+		const env = createFakeTerminalEnv({
+			webglShouldThrow: true,
+			cheerpxOverrides: sim.cheerpxOverrides
+		});
+		env.mockCx.run.mockImplementation(
+			() => new Promise((resolve) => setTimeout(() => resolve({ status: 0 }), 5000))
+		);
+
+		const manager = createVmManager(
+			{
+				diskImageType: 'github',
+				diskImageUrl: 'debian_mini.ext2',
+				needsDisplay: false,
+				printIntro: false,
+				cmd: '/bin/bash',
+				args: ['--login'],
+				opts: { cwd: '/home/user', env: [] }
+			},
+			{ cacheId: 'blocks_github', workspaceCacheId: 'workspace', loadDeps: env.loadDeps }
+		);
+
+		const bootPromise = manager.boot({ consoleElement: consoleEl });
+		// Wait for initCheerpX to enter device creation, then trigger a concurrent restartTab('tab-1')
+		// to verify the in-flight initPromise guard prevents a concurrent CheerpOS race.
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await Promise.all([bootPromise, manager.restartTab('tab-1')]);
+
+		expect(get(bootState).ready).toBe(true);
+		expect(get(vmState)).toBe('ready');
+		expect(get(bootState).error).toBeNull();
+
+		expect(env.MockCheerpX.GitHubDevice.create).toHaveBeenCalledTimes(1);
+		expect(env.MockCheerpX.GitHubDevice.create).toHaveBeenCalledWith('debian_mini.ext2');
+		expect(env.MockCheerpX.WebDevice.create).toHaveBeenCalledWith('.');
+		expect(env.MockCheerpX.WebDevice.create).toHaveBeenCalledWith('documents');
+		expect(env.MockCheerpX.WebDevice.create).not.toHaveBeenCalledWith('');
+		expect(env.MockCheerpX.IDBDevice.create).toHaveBeenCalledWith('blocks_github');
+		expect(env.MockCheerpX.IDBDevice.create).toHaveBeenCalledWith('workspace');
+		expect(env.MockCheerpX.DataDevice.create).toHaveBeenCalledTimes(1);
+		expect(env.MockCheerpX.OverlayDevice.create).toHaveBeenCalledWith(
+			{ kind: 'github', url: 'debian_mini.ext2' },
+			expect.objectContaining({ kind: 'idb', name: 'blocks_github' })
+		);
+
+		// First IDBDevice(cacheId) must finish loading cheerpOS.js before any other CheerpOS .create() starts
+		const firstIdbEndIdx = sim.callLog.indexOf('end:idb:blocks_github');
+		expect(firstIdbEndIdx).toBeGreaterThan(-1);
+		for (const nextStart of ['start:idb:workspace', 'start:web:.', 'start:web:documents', 'start:data']) {
+			const idx = sim.callLog.indexOf(nextStart);
+			expect(idx).toBeGreaterThan(firstIdbEndIdx);
+		}
+
+		manager.dispose();
+	});
+
+	it('retries cleanly via restartTab("tab-1") after an early GitHubDevice.create failure without CheerpJIndexedDBFolder race', async () => {
+		const sim = createCheerpOSRaceSimulator();
+		let attempts = 0;
+		sim.cheerpxOverrides.GitHubDevice.create = vi.fn(async (url) => {
+			attempts++;
+			sim.callLog.push(`github:${url}:attempt${attempts}`);
+			if (attempts === 1) {
+				throw new Error('transient network error');
+			}
+			return { kind: 'github', url };
+		});
+
+		const env = createFakeTerminalEnv({
+			webglShouldThrow: true,
+			cheerpxOverrides: sim.cheerpxOverrides
+		});
+		env.mockCx.run.mockImplementation(
+			() => new Promise((resolve) => setTimeout(() => resolve({ status: 0 }), 5000))
+		);
+
+		const manager = createVmManager(
+			{
+				diskImageType: 'github',
+				diskImageUrl: 'debian_mini.ext2',
+				needsDisplay: false,
+				printIntro: false,
+				cmd: '/bin/bash',
+				args: ['--login'],
+				opts: { cwd: '/home/user', env: [] }
+			},
+			{ cacheId: 'blocks_github', workspaceCacheId: 'workspace', loadDeps: env.loadDeps }
+		);
+
+		await manager.boot({ consoleElement: consoleEl });
+		expect(get(vmState)).toBe('error');
+		expect(get(bootState).phase).toBe('error');
+		expect(get(bootState).error).toContain('transient network error');
+		// Promise.allSettled ensured IDBDevice(blocks_github) finished loading cheerpOS.js before throwing
+		expect(sim.callLog).toContain('end:idb:blocks_github');
+
+		await manager.restartTab('tab-1');
+		expect(get(vmState)).toBe('ready');
+		expect(get(bootState).ready).toBe(true);
+		expect(get(bootState).error).toBeNull();
+		expect(env.MockCheerpX.GitHubDevice.create).toHaveBeenCalledTimes(2);
+
+		manager.dispose();
+	});
+
+	it('ignores CheerpX.Linux.create rejection if dispose() was called while Linux.create was pending', async () => {
+		let resolveLinuxStarted;
+		const linuxCreateStarted = new Promise((resolve) => {
+			resolveLinuxStarted = resolve;
+		});
+		let rejectLinuxCreate;
+		const linuxCreateMock = vi.fn(
+			() =>
+				new Promise((_, reject) => {
+					rejectLinuxCreate = reject;
+					resolveLinuxStarted();
+				})
+		);
+
+		const env = createFakeTerminalEnv({
+			webglShouldThrow: true,
+			cheerpxOverrides: {
+				Linux: { create: linuxCreateMock }
+			}
+		});
+
+		const manager = createVmManager(
+			{
+				diskImageType: 'bytes',
+				diskImageUrl: '/local.ext2',
+				needsDisplay: false,
+				printIntro: false,
+				cmd: '/bin/bash',
+				args: [],
+				opts: { cwd: '/home/user', env: [] }
+			},
+			{ loadDeps: env.loadDeps }
+		);
+
+		const bootPromise = manager.boot({ consoleElement: consoleEl });
+		await linuxCreateStarted;
+
+		expect(linuxCreateMock).toHaveBeenCalledTimes(1);
+		expect(get(bootState)).toMatchObject({ phase: 'linux', ready: false, error: null });
+
+		manager.dispose();
+		expect(get(vmState)).toBe('disposed');
+		const bootStateAtDispose = get(bootState);
+
+		rejectLinuxCreate(new Error('Linux.create aborted during teardown'));
+		await bootPromise;
+
+		expect(get(vmState)).toBe('disposed');
+		expect(get(bootState)).toEqual(bootStateAtDispose);
+		expect(get(bootState).phase).toBe('linux');
+		expect(get(bootState).error).toBeNull();
+		expect(get(bootState).ready).toBe(false);
+		expect(manager.getCheerpX()).toBeNull();
+		expect(env.mockCx.delete).not.toHaveBeenCalled();
+		expect(env.mockCx.registerCallback).not.toHaveBeenCalled();
+		expect(get(sessions).find((s) => s.id === 'tab-1')?.status).not.toBe('error');
+	});
+
+	it('deletes late-resolved Linux instance and clears getCheerpX() when dispose() ran while Linux.create was pending', async () => {
+		let resolveLinuxStarted;
+		const linuxCreateStarted = new Promise((resolve) => {
+			resolveLinuxStarted = resolve;
+		});
+		let resolveLinuxCreate;
+		const linuxCreateMock = vi.fn(
+			() =>
+				new Promise((resolve) => {
+					resolveLinuxCreate = resolve;
+					resolveLinuxStarted();
+				})
+		);
+
+		const env = createFakeTerminalEnv({
+			webglShouldThrow: true,
+			cheerpxOverrides: {
+				Linux: { create: linuxCreateMock }
+			}
+		});
+
+		const manager = createVmManager(
+			{
+				diskImageType: 'bytes',
+				diskImageUrl: '/local.ext2',
+				needsDisplay: false,
+				printIntro: false,
+				cmd: '/bin/bash',
+				args: [],
+				opts: { cwd: '/home/user', env: [] }
+			},
+			{ loadDeps: env.loadDeps }
+		);
+
+		const bootPromise = manager.boot({ consoleElement: consoleEl });
+		await linuxCreateStarted;
+
+		expect(linuxCreateMock).toHaveBeenCalledTimes(1);
+
+		manager.dispose();
+		expect(get(vmState)).toBe('disposed');
+		expect(manager.getCheerpX()).toBeNull();
+
+		resolveLinuxCreate(env.mockCx);
+		await bootPromise;
+
+		expect(env.mockCx.delete).toHaveBeenCalledTimes(1);
+		expect(manager.getCheerpX()).toBeNull();
+		expect(get(vmState)).toBe('disposed');
+		expect(get(bootState).ready).toBe(false);
+		expect(get(bootState).phase).toBe('linux');
+		expect(env.mockCx.registerCallback).not.toHaveBeenCalled();
+		expect(env.mockCx.setCustomConsole).not.toHaveBeenCalled();
+		expect(env.mockCx.run).not.toHaveBeenCalled();
 	});
 });
